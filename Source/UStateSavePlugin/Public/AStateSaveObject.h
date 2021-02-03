@@ -43,6 +43,11 @@ public:
 	bool SaveState(int Slot);
 	bool LoadState(int Slot);
 
+private:
+	// WIP, in combination with a better interface
+	bool Save(int Slot);
+	bool Load(int Slot);
+
 protected:
 	virtual void BeginPlay() override;
 

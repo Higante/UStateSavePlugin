@@ -113,3 +113,17 @@ bool AStateSaveObject::LoadState(int Slot)
 
 	return true;
 }
+
+	bool AStateSaveObject::Save(int Slot)
+	{
+		if (SavedSlots[Slot-1].Num != 0) 
+		{
+		}
+
+		return false;
+	}
+
+	bool AStateSaveObject::Load(int Slot)
+	{
+		return false;
+	}
