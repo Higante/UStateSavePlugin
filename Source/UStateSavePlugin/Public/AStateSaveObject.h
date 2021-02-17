@@ -9,6 +9,23 @@
 #include <Tuple.h>
 #include "AStateSaveObject.generated.h"
 
+USTRUCT(BlueprintType)
+struct FSavedObjectInfo
+{
+	GENERATED_BODY()
+
+	FVector ActorLocation;
+	FRotator ActorRotation;
+	TArray<FName> Tags;
+
+	FSavedObjectInfo()
+	{
+		ActorLocation = FVector();
+		ActorRotation = FRotator();
+		Tags.Init(FName(), 0);
+	}
+};
+
 UCLASS()
 class USTATESAVEPLUGIN_API AStateSaveObject : public AActor
 {
@@ -32,7 +49,7 @@ public:
 
 private:
 	UWorld* World;
-	TArray<TMap<FString, TTuple<FVector, FRotator, TArray<FName>>>> SavedSlots;
+	TArray<TMap<FString, FSavedObjectInfo>> SavedSlots;
 	
 // Functions
 public:

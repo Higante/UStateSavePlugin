@@ -32,7 +32,7 @@ void AStateSaveObject::BeginPlay()
 	World = this->GetWorld();
 
 	// Setup the SaveSlots
-	SavedSlots.Init(TMap<FString, TTuple<FVector, FRotator, TArray<FName>>>(), MaximumSaveStates);
+	SavedSlots.Init(TMap<FString, FSavedObjectInfo>(), MaximumSaveStates);
 }
 
 /*
@@ -51,7 +51,7 @@ bool AStateSaveObject::SaveState(int Slot)
 		return false;
 	}
 
-	TMap<FString, TTuple<FVector, FRotator, TArray<FName>>> SavingMap = TMap<FString, TTuple<FVector, FRotator, TArray<FName>>>();
+	TMap<FString, FSavedObjectInfo> SavingMap = TMap<FString, FSavedObjectInfo>();
 	TArray<AActor*> OutArray = TArray<AActor*>();
 
 	UGameplayStatics::GetAllActorsOfClass(World, AStaticMeshActor::StaticClass(), OutArray);
@@ -61,7 +61,12 @@ bool AStateSaveObject::SaveState(int Slot)
 	{
 		if (Cast<AStaticMeshActor>(actor)->GetStaticMeshComponent()->Mobility == EComponentMobility::Movable)
 		{
-			SavingMap.Add(actor->GetName(), MakeTuple(actor->GetActorLocation(), actor->GetActorRotation(), actor->Tags));
+			FSavedObjectInfo OutputInfo = FSavedObjectInfo();
+			OutputInfo.ActorLocation = actor->GetActorLocation();
+			OutputInfo.ActorRotation = actor->GetActorRotation();
+			OutputInfo.Tags = actor->Tags;
+
+			SavingMap.Add(actor->GetName(), OutputInfo);
 		}
 	}
 
@@ -89,7 +94,7 @@ bool AStateSaveObject::LoadState(int Slot)
 	}
 
 	// Get the Current Actors still in the world.
-	TMap<FString, TTuple<FVector, FRotator, TArray<FName>>> LoadingMap = SavedSlots[Slot-1];
+	TMap<FString, FSavedObjectInfo> LoadingMap = SavedSlots[Slot-1];
 	TArray<AActor*> OutArray = TArray<AActor*>();
 
 	UGameplayStatics::GetAllActorsOfClass(World, AStaticMeshActor::StaticClass(), OutArray);
@@ -98,10 +103,10 @@ bool AStateSaveObject::LoadState(int Slot)
 		if (Cast<AStaticMeshActor>(actor)->GetStaticMeshComponent()->Mobility == EComponentMobility::Movable && LoadingMap.Find(actor->GetName()) != nullptr)
 		{
 			// Set Location, Rotation and tags to what it was before
-			TTuple<FVector, FRotator, TArray<FName>>* LoadedObject = LoadingMap.Find(actor->GetName());
-			actor->SetActorLocation(LoadedObject->Get<0>());
-			actor->SetActorRotation(LoadedObject->Get<1>());
-			actor->Tags = LoadedObject->Get<2>();
+			FSavedObjectInfo* LoadedObject = LoadingMap.Find(actor->GetName());
+			actor->SetActorLocation(LoadedObject->ActorLocation);
+			actor->SetActorRotation(LoadedObject->ActorRotation);
+			actor->Tags = LoadedObject->Tags;
 
 			// Set Velocity of the Object ot 0
 			Cast<AStaticMeshActor>(actor)->GetStaticMeshComponent()->SetPhysicsLinearVelocity(FVector(0, 0, 0));
@@ -116,7 +121,13 @@ bool AStateSaveObject::LoadState(int Slot)
 
 	bool AStateSaveObject::Save(int Slot)
 	{
-		if (SavedSlots[Slot-1].Num != 0) 
+		if (Slot == 0 || Slot > SlotToWork)
+		{
+			UE_LOG(LogTemp, Error, TEXT("%s: Slot not in range!"), *__FUNCTION__);
+			return false;
+		}
+
+		if (SavedSlots[Slot-1].Num() != 0) 
 		{
 		}
 
