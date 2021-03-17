@@ -15,7 +15,7 @@ TMap<FString, FSavedObjectInfo> USaveState::GetSavedState()
 
 void USaveState::ClearContents_Implementation()
 {
-	SavedClasses.Empty();
+	SavedClasses = {};
 	SavedState = TMap<FString, FSavedObjectInfo>();
 }
 
