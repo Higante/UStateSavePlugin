@@ -35,6 +35,9 @@ void AStateSaveObject::BeginPlay()
 
 	// Setup the SaveSlots
 	SavedStates.Init(NewObject<USaveState>(), MaximumSaveStates);
+
+	FOnActorSpawned::FDelegate OnActorSpawnDelegate = FOnActorSpawned::FDelegate::CreateUObject(this, &AStateSaveObject::SpawnHandler);
+	GetWorld()->AddOnActorSpawnedHandler(OnActorSpawnDelegate);
 }
 
 /*
@@ -80,4 +83,17 @@ bool AStateSaveObject::LoadState(int Slot)
 	}
 
 	return SavedStates[Slot]->Load(World);
+}
+
+void AStateSaveObject::SpawnHandler(AActor * InActor)
+{
+	if (!ClassesToSave.Contains(InActor->GetClass()))
+		return;
+
+	UE_LOG(LogTemp, Error, TEXT("%s has been spawned."), *InActor->GetName());
+	
+	for (USaveState* SaveState : SavedStates)
+	{
+		SaveState->OnSpawnChange(InActor);
+	}
 }

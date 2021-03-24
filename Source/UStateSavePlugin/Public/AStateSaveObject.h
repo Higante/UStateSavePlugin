@@ -48,6 +48,8 @@ public:
 	bool SaveState(int Slot);
 	bool LoadState(int Slot);
 
+	void SpawnHandler(AActor* InActor);
+
 private:
 
 protected:

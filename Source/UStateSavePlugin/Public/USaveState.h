@@ -14,6 +14,9 @@ struct FSavedObjectInfo
 	GENERATED_BODY()
 
 public:
+	// Optional Variables
+	UClass* ActorClass;
+
 	FVector ActorLocation;
 	FRotator ActorRotation;
 	TArray<FName> Tags;
@@ -27,13 +30,8 @@ public:
 
 	FSavedObjectInfo(AActor* InputActor)
 	{
-		ActorLocation = InputActor->GetActorLocation();
-		ActorRotation = InputActor->GetActorRotation();
-		Tags = InputActor->Tags;
-	}
+		ActorClass = InputActor->GetClass();
 
-	void SaveObject(AActor* InputActor)
-	{
 		ActorLocation = InputActor->GetActorLocation();
 		ActorRotation = InputActor->GetActorRotation();
 		Tags = InputActor->Tags;
@@ -50,6 +48,10 @@ public:
 
 	TArray<UClass*> SavedClasses;
 	TMap<FString, FSavedObjectInfo> SavedState;
+	
+	// Save Objects etc.
+	TArray<AActor*> ObjectsToDelete;
+	TArray<AActor*> ObjectsToSpawn;
 
 	TMap<FString, FSavedObjectInfo> GetSavedState();
 
@@ -64,4 +66,15 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
 	bool Load(UWorld* World);
 	bool Load_Implementation(UWorld* World) override;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
+	void OnSpawnChange(AActor* InActor);
+	void OnSpawnChange_Implementation(AActor* InActor) override;
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
+	void OnDeleteChange(AActor* InActor);
+	void OnDeleteChange_Implementation(AActor* InActor) override;
+
+private:
+	AActor* CreateSpawningActor(AActor* InActor);
 };

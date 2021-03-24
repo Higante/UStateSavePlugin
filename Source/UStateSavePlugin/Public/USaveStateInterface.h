@@ -29,4 +29,10 @@ public:
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
 	bool Load(UWorld* World);
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
+	void OnSpawnChange(AActor* InActor);
+
+	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
+	void OnDeleteChange(AActor* InActor);
 };
