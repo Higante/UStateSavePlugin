@@ -24,6 +24,9 @@ public:
 	UPROPERTY(EditAnywhere)
 	bool bDebug = false;
 
+	UPROPERTY(EditAnywhere)
+	bool bDeleteDebug = false;
+
 	// Temporary Values until Alternative implemented
 	UPROPERTY(EditAnywhere)
 	bool bSave = false;
@@ -48,9 +51,25 @@ public:
 	bool SaveState(int Slot);
 	bool LoadState(int Slot);
 
-	void SpawnHandler(AActor* InActor);
+	/**
+	 * This Function is a handler and Dynamic Function which is called once an
+	 * Actor, which is tracked, is destroyed.
+	 * 
+	 * @param InActor The Destroyed Actor in the World
+	 */
+	UFUNCTION()
+	void OnDestroyHandler(AActor* InActor);
 
 private:
+	/**
+	 * This Function will be called to work as a middleman between itself
+	 * and SaveStates who then track what needs to be deleted once the need
+	 * calls for it.
+	 * 
+	 * @param InActor The Spawned Actor in the World
+	 */
+	UFUNCTION()
+	void SpawnHandler(AActor* InActor);
 
 protected:
 	virtual void BeginPlay() override;

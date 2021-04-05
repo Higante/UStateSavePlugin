@@ -5,9 +5,29 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "USaveStateInterface.h"
+#include "Serialization/MemoryWriter.h"
+#include "Serialization/MemoryReader.h"
+#include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "USaveState.generated.h"
 
-// Struct to help save Objects.
+/**
+ * Struct works as a proxy for FArchive to use ObjectAndNameAsString Proxy
+ * URL: https://github.com/shinaka/UE4ActorSaveLoad/blob/c58f9ff12301c7a764e4fbdeb8af2349195dadb3/PersistentStore.h#L6-L19
+ */
+struct USTATESAVEPLUGIN_API FSaveGameArchive : public FObjectAndNameAsStringProxyArchive
+{
+	FSaveGameArchive(FArchive& IsInnerArchive) : FObjectAndNameAsStringProxyArchive(IsInnerArchive, true)
+	{
+		ArIsSaveGame = true;
+	}
+};
+
+/**
+ * Struct holding the relevant information about the Saved Object.
+ * 
+ * ? Does it makes sense to put it into it's own file and inheritance ?
+ * TODO: Increase it's range of variables
+ */
 USTRUCT(BlueprintType)
 struct FSavedObjectInfo
 {
@@ -20,6 +40,7 @@ public:
 	FVector ActorLocation;
 	FRotator ActorRotation;
 	TArray<FName> Tags;
+	TArray<uint8> ActorData;
 
 	FSavedObjectInfo()
 	{
@@ -36,6 +57,13 @@ public:
 		ActorRotation = InputActor->GetActorRotation();
 		Tags = InputActor->Tags;
 	}
+
+	/**
+	 * Initial attempt to make it able to save the ActorData
+	 * Inspiration Link: https://github.com/shinaka/UE4ActorSaveLoad/blob/master/PersistentStore.h
+	 * TODO: Put this whole thing into its own file
+	 */
+	friend FArchive& operator<<(FArchive& Archive, FSavedObjectInfo& ActorData);
 };
 
 UCLASS()
@@ -51,9 +79,7 @@ public:
 	
 	// Save Objects etc.
 	TArray<AActor*> ObjectsToDelete;
-	TArray<AActor*> ObjectsToSpawn;
-
-	TMap<FString, FSavedObjectInfo> GetSavedState();
+	TArray<FSavedObjectInfo> ObjectsToSpawn;
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
 	void ClearContents();

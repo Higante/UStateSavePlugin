@@ -2,18 +2,20 @@
 #include "Components/PrimitiveComponent.h"
 #include "Kismet/GameplayStatics.h"
 
+FArchive& operator<<(FArchive& Archive, FSavedObjectInfo& ActorData)
+{
+	Archive << ActorData.ActorData;
+
+	return Archive;
+}
+
 USaveState::USaveState()
 {
 	SavedClasses = {};
 	SavedState = TMap<FString, FSavedObjectInfo>();
 
-	ObjectsToDelete = {};
-	ObjectsToSpawn = {};
-}
-
-TMap<FString, FSavedObjectInfo> USaveState::GetSavedState()
-{
-	return SavedState;
+	ObjectsToDelete = TArray<AActor*>();
+	ObjectsToSpawn = TArray<FSavedObjectInfo>();
 }
 
 void USaveState::ClearContents_Implementation()
@@ -21,15 +23,15 @@ void USaveState::ClearContents_Implementation()
 	SavedClasses = {};
 	SavedState = TMap<FString, FSavedObjectInfo>();
 
-	ObjectsToDelete = {};
-	ObjectsToSpawn = {};
+	ObjectsToDelete = TArray<AActor*>();
+	ObjectsToSpawn = TArray<FSavedObjectInfo>();
 }
 
 bool USaveState::Save_Implementation(UWorld * World, TArray<UClass*>& ToSave)
 {
 	// Reset To Be Saved/Deleted
-	ObjectsToDelete = {};
-	ObjectsToSpawn = {};
+	ObjectsToDelete = TArray<AActor*>();
+	ObjectsToSpawn = TArray<FSavedObjectInfo>();
 
 	// Save Classes saved for later used
 	SavedClasses = ToSave;
@@ -58,23 +60,29 @@ bool USaveState::Save_Implementation(UWorld * World, TArray<UClass*>& ToSave)
 
 bool USaveState::Load_Implementation(UWorld * World)
 {
-	TMap<FString, FSavedObjectInfo> CurrentSavedState = GetSavedState();
-
+	UE_LOG(LogTemp, Display, TEXT("Start to Load SaveState!"));
 	// Deal with the Two Arrays needing spawning/deleting
 	for (AActor* ToDelete : ObjectsToDelete)
 	{
+		UE_LOG(LogTemp, Display, TEXT("Start To delete Object!"));
 		ToDelete->Destroy();
 	}
 
-	for (int i = 0; i < ObjectsToSpawn.Num(); i++)
+	for (FSavedObjectInfo ObjectRecord : ObjectsToSpawn)
 	{
-		CreateSpawningActor(ObjectsToSpawn[i]);
+		UE_LOG(LogTemp, Display, TEXT("Start To Spawn Object!"));
+		AActor* NewActor = World->SpawnActor(ObjectRecord.ActorClass, &ObjectRecord.ActorLocation, &ObjectRecord.ActorRotation);
+		FMemoryReader MemoryReader(ObjectRecord.ActorData, true);
+		FSaveGameArchive Archive(MemoryReader);
+		NewActor->Serialize(Archive);
+		UE_LOG(LogTemp, Display, TEXT("Spawning Object Complete!"));
 	}
 
 	// Clear both Arrays
-	ObjectsToDelete = {};
-	ObjectsToSpawn = {};
+	ObjectsToDelete = TArray<AActor*>();
+	ObjectsToSpawn = TArray<FSavedObjectInfo>();
 
+	// TODO: Search for a better alternative to this bit.
 	for (UClass* RefClass : SavedClasses)
 	{
 		// Get the Actors of the Class within the World
@@ -83,24 +91,27 @@ bool USaveState::Load_Implementation(UWorld * World)
 
 		for (AActor* FoundActor : OutActors)
 		{
-			if (CurrentSavedState.Find(FoundActor->GetName()) != nullptr)
+			if (SavedState.Find(FoundActor->GetName()) != nullptr)
 			{
-				FSavedObjectInfo* SavedInfo = CurrentSavedState.Find(FoundActor->GetName());
-
-				// Set Saved Infos
-				FoundActor->SetActorLocation(SavedInfo->ActorLocation);
-				FoundActor->SetActorRotation(SavedInfo->ActorRotation);
-				FoundActor->Tags = SavedInfo->Tags;
-
-				// Velocity to 0 (Check if it may throw an error)
-				if (Cast<UPrimitiveComponent>(FoundActor->GetRootComponent()) != nullptr)
+				FSavedObjectInfo* SavedInfo = SavedState.Find(FoundActor->GetName());
+				if (SavedInfo != nullptr)
 				{
-					Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsLinearVelocity(FVector());
-					Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsAngularVelocityInDegrees(FVector());
-				}
-				else if (Cast<USceneComponent>(FoundActor->GetRootComponent()) != nullptr)
-				{
-					Cast<USceneComponent>(FoundActor->GetRootComponent())->ComponentVelocity = FVector();
+
+					// Set Saved Infos
+					FoundActor->SetActorLocation(SavedInfo->ActorLocation);
+					FoundActor->SetActorRotation(SavedInfo->ActorRotation);
+					FoundActor->Tags = SavedInfo->Tags;
+
+					// Velocity to 0 (Check if it may throw an error)
+					if (Cast<UPrimitiveComponent>(FoundActor->GetRootComponent()) != nullptr)
+					{
+						Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsLinearVelocity(FVector());
+						Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsAngularVelocityInDegrees(FVector());
+					}
+					else if (Cast<USceneComponent>(FoundActor->GetRootComponent()) != nullptr)
+					{
+						Cast<USceneComponent>(FoundActor->GetRootComponent())->ComponentVelocity = FVector();
+					}
 				}
 			}
 		}
@@ -111,36 +122,27 @@ bool USaveState::Load_Implementation(UWorld * World)
 
 void USaveState::OnSpawnChange_Implementation(AActor * InActor)
 {
-	if (ObjectsToSpawn.Contains(InActor))
-	{
-		ObjectsToSpawn.Remove(InActor);
-		return;
-	}
+	/**
+	 * TODO: Find a new way to check in ObjectsToSpawn
+	 */
 
 	ObjectsToDelete.Add(InActor);
 }
 
 void USaveState::OnDeleteChange_Implementation(AActor * InActor)
 {
-	/*
 	if (ObjectsToDelete.Contains(InActor))
 	{
 		ObjectsToDelete.Remove(InActor);
 		return;
 	}
-	*/
 
-	ObjectsToSpawn.Add(InActor);
-}
+	UE_LOG(LogTemp, Display, TEXT("Beginning to Archive Destroyed Actor's Data..."));
+	FSavedObjectInfo ToSave = FSavedObjectInfo(InActor);
+	FMemoryWriter MemoryWriter(ToSave.ActorData, true);
+	FSaveGameArchive Archive(MemoryWriter);
+	InActor->Serialize(Archive);
+	UE_LOG(LogTemp, Display, TEXT("Done!!!"));
 
-AActor * USaveState::CreateSpawningActor(AActor* InActor)
-{
-	FActorSpawnParameters Params = FActorSpawnParameters();
-	Params.Name = FName(*InActor->GetName());
-
-	FTransform InTransform = FTransform(InActor->GetActorRotation(), InActor->GetActorLocation());
-
-	AActor* SpawningActor = GetWorld()->SpawnActor(InActor->GetClass(), &InTransform, Params);
-
-	return SpawningActor;
+	ObjectsToSpawn.Add(ToSave);
 }
