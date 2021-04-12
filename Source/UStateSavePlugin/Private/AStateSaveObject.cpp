@@ -97,7 +97,7 @@ bool AStateSaveObject::LoadState(int Slot)
 		return false;
 	}
 
-	return SavedStates[Slot]->Load(GetWorld());
+	return SavedStates[Slot]->Load(World);
 }
 
 void AStateSaveObject::OnDestroyHandler(AActor* InActor)
