@@ -2,13 +2,6 @@
 #include "Components/PrimitiveComponent.h"
 #include "Kismet/GameplayStatics.h"
 
-FArchive& operator<<(FArchive& Archive, FSavedObjectInfo& ActorData)
-{
-	Archive << ActorData.ActorData;
-
-	return Archive;
-}
-
 USaveState::USaveState()
 {
 	SavedClasses = {};
@@ -18,7 +11,7 @@ USaveState::USaveState()
 	ObjectsToSpawn = TArray<FSavedObjectInfo>();
 }
 
-void USaveState::ClearContents_Implementation()
+void USaveState::ClearContents()
 {
 	SavedClasses = {};
 	SavedState = TMap<FString, FSavedObjectInfo>();
@@ -27,7 +20,7 @@ void USaveState::ClearContents_Implementation()
 	ObjectsToSpawn = TArray<FSavedObjectInfo>();
 }
 
-bool USaveState::Save_Implementation(UWorld * World, TArray<UClass*>& ToSave)
+bool USaveState::Save(UWorld * World, TArray<UClass*>& ToSave)
 {
 	// Reset To Be Saved/Deleted
 	ObjectsToDelete = TArray<AActor*>();
@@ -58,7 +51,7 @@ bool USaveState::Save_Implementation(UWorld * World, TArray<UClass*>& ToSave)
 	return true;
 }
 
-bool USaveState::Load_Implementation(UWorld * World)
+bool USaveState::Load(UWorld * World)
 {
 	UE_LOG(LogTemp, Display, TEXT("Start to Load SaveState!"));
 	// Deal with the Two Arrays needing spawning/deleting
@@ -71,10 +64,10 @@ bool USaveState::Load_Implementation(UWorld * World)
 	for (FSavedObjectInfo ObjectRecord : ObjectsToSpawn)
 	{
 		UE_LOG(LogTemp, Display, TEXT("Start To Spawn Object!"));
+		
 		AActor* NewActor = World->SpawnActor(ObjectRecord.ActorClass, &ObjectRecord.ActorLocation, &ObjectRecord.ActorRotation);
-		FMemoryReader MemoryReader(ObjectRecord.ActorData, true);
-		FSaveGameArchive Archive(MemoryReader);
-		NewActor->Serialize(Archive);
+		FMemoryReader Reader = FMemoryReader(ObjectRecord.ActorData);
+		NewActor->Serialize(Reader);
 		UE_LOG(LogTemp, Display, TEXT("Spawning Object Complete!"));
 	}
 
@@ -120,7 +113,7 @@ bool USaveState::Load_Implementation(UWorld * World)
 	return true;
 }
 
-void USaveState::OnSpawnChange_Implementation(AActor * InActor)
+void USaveState::OnSpawnChange(AActor * InActor)
 {
 	/**
 	 * TODO: Find a new way to check in ObjectsToSpawn
@@ -129,7 +122,7 @@ void USaveState::OnSpawnChange_Implementation(AActor * InActor)
 	ObjectsToDelete.Add(InActor);
 }
 
-void USaveState::OnDeleteChange_Implementation(AActor * InActor)
+void USaveState::OnDeleteChange(AActor * InActor)
 {
 	if (ObjectsToDelete.Contains(InActor))
 	{
@@ -138,11 +131,11 @@ void USaveState::OnDeleteChange_Implementation(AActor * InActor)
 	}
 
 	UE_LOG(LogTemp, Display, TEXT("Beginning to Archive Destroyed Actor's Data..."));
-	FSavedObjectInfo ToSave = FSavedObjectInfo(InActor);
-	FMemoryWriter MemoryWriter(ToSave.ActorData, true);
-	FSaveGameArchive Archive(MemoryWriter);
-	InActor->Serialize(Archive);
+	FSavedObjectInfo ObjectSpawnInfo = FSavedObjectInfo(InActor);
+	FMemoryWriter MemoryWriter(ObjectSpawnInfo.ActorData);
+	MemoryWriter.ArIsSaveGame = true;
+	InActor->Serialize(MemoryWriter);
 	UE_LOG(LogTemp, Display, TEXT("Done!!!"));
 
-	ObjectsToSpawn.Add(ToSave);
+	ObjectsToSpawn.Add(ObjectSpawnInfo);
 }

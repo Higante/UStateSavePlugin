@@ -18,21 +18,21 @@ public:
 	/*
 		Method is intended to clear the Variables hold within this SaveState.
 	*/
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	void ClearContents();
+	UFUNCTION()
+	virtual void ClearContents();
 	
 	/*
 		Method intended to save the Objects relevant.
 	*/
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	bool Save(UWorld* World, TArray<UClass*>& ToSave);
+	UFUNCTION()
+	virtual bool Save(UWorld* World, TArray<UClass*>& ToSave);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	bool Load(UWorld* World);
+	UFUNCTION()
+	virtual bool Load(UWorld* World);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	void OnSpawnChange(AActor* InActor);
+	UFUNCTION()
+	virtual void OnSpawnChange(AActor* InActor);
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	void OnDeleteChange(AActor* InActor);
+	UFUNCTION()
+	virtual void OnDeleteChange(AActor* InActor);
 };

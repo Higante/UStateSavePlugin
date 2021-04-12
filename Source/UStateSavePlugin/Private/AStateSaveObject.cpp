@@ -1,6 +1,7 @@
 #include "AStateSaveObject.h"
 #include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
+#include "USaveState.h"
 #include "Kismet/GameplayStatics.h"
 
 AStateSaveObject::AStateSaveObject()
@@ -84,6 +85,7 @@ bool AStateSaveObject::SaveState(int Slot)
 */
 bool AStateSaveObject::LoadState(int Slot)
 {
+	UE_LOG(LogTemp, Warning, TEXT("%s : Begin loading State!"), TEXT(__FUNCTION__));
 	// Check whether the given int is within range
 	if (Slot < 0 || Slot > MaximumSaveStates)
 	{
@@ -91,7 +93,7 @@ bool AStateSaveObject::LoadState(int Slot)
 		return false;
 	}
 
-	if (SavedStates[Slot] == NULL)
+	if (SavedStates[Slot] == NULL || SavedStates[Slot] == nullptr)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Error (%s): SavedState on Slot not set."), TEXT(__FUNCTION__));
 		return false;
