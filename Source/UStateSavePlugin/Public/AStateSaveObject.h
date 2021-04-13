@@ -5,8 +5,8 @@
 #include <CoreMinimal.h>
 #include <Engine/World.h>
 #include <GameFramework/Actor.h>
-#include "USaveState.h"
 #include <Map.h>
+#include "USaveState.h"
 #include "AStateSaveObject.generated.h"
 
 UCLASS()
@@ -19,13 +19,10 @@ public:
 
 	// Change to Editor Only
 	UPROPERTY(EditAnywhere)
-	int MaximumSaveStates = 5;
+	int MaximumSaveStates = 3;
 
 	UPROPERTY(EditAnywhere)
 	bool bDebug = false;
-
-	UPROPERTY(EditAnywhere)
-	bool bDeleteDebug = false;
 
 	// Temporary Values until Alternative implemented
 	UPROPERTY(EditAnywhere)
@@ -33,7 +30,7 @@ public:
 	UPROPERTY(EditAnywhere)
 	bool bLoad = false;
 	UPROPERTY(EditAnywhere)
-	int SlotToWork = 1;
+	int SlotToWork = 0;
 
 
 	UPROPERTY(EditAnywhere)

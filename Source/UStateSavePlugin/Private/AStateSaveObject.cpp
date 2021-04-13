@@ -1,8 +1,8 @@
 #include "AStateSaveObject.h"
-#include "Engine/StaticMeshActor.h"
 #include "Components/StaticMeshComponent.h"
-#include "USaveState.h"
+#include "Engine/StaticMeshActor.h"
 #include "Kismet/GameplayStatics.h"
+#include "USaveState.h"
 
 AStateSaveObject::AStateSaveObject()
 {
@@ -26,17 +26,6 @@ void AStateSaveObject::Tick(float DeltaTime)
 		LoadState(SlotToWork);
 		bLoad = false;
 	}
-
-	if (bDeleteDebug)
-	{
-		for (USaveState* SaveState : SavedStates)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Amount to Delete: %d"), SaveState->ObjectsToDelete.Num());
-			UE_LOG(LogTemp, Warning, TEXT("Amount to Spawn: %d"), SaveState->ObjectsToSpawn.Num());
-		}
-
-		bDeleteDebug = false;
-	}
 }
 
 void AStateSaveObject::BeginPlay()
@@ -50,7 +39,6 @@ void AStateSaveObject::BeginPlay()
 	{
 		SavedStates.Add(NewObject<USaveState>());
 	}
-	//SavedStates.Init(NewObject<USaveState>(), MaximumSaveStates);
 
 	FOnActorSpawned::FDelegate OnActorSpawnDelegate = FOnActorSpawned::FDelegate::CreateUObject(this, &AStateSaveObject::SpawnHandler);
 	GetWorld()->AddOnActorSpawnedHandler(OnActorSpawnDelegate);
@@ -66,13 +54,11 @@ void AStateSaveObject::BeginPlay()
 bool AStateSaveObject::SaveState(int Slot)
 {
 	// Check whether the given int is within range.
-	if (Slot < 0 || Slot > MaximumSaveStates)
+	if (Slot < 0 || Slot >= MaximumSaveStates)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Error (%s): Slot given not in range."), *__FUNCTION__);
+		UE_LOG(LogTemp, Error, TEXT("Error (%s): Slot given not in range."), TEXT(__FUNCTION__));
 		return false;
 	}
-
-	SavedStates[Slot]->ClearContents();
 
 	return SavedStates[Slot]->Save(World, ClassesToSave);
 }
@@ -109,12 +95,6 @@ void AStateSaveObject::OnDestroyHandler(AActor* InActor)
 	{
 		SavedStates[i]->OnDeleteChange(InActor);
 	}
-	/*
-	for (USaveState* SaveState : SavedStates)
-	{
-		SaveState->OnDeleteChange(InActor);
-	}
-	*/
 }
 
 void AStateSaveObject::SpawnHandler(AActor * InActor)
@@ -122,7 +102,7 @@ void AStateSaveObject::SpawnHandler(AActor * InActor)
 	if (!ClassesToSave.Contains(InActor->GetClass()))
 		return;
 
-	UE_LOG(LogTemp, Warning, TEXT("%s has been spawned."), *InActor->GetName());
+	UE_LOG(LogTemp, Warning, TEXT("%s: %s has been spawned."), TEXT(__FUNCTION__), *InActor->GetName());
 
 	InActor->OnDestroyed.AddDynamic(this, &AStateSaveObject::OnDestroyHandler);
 
@@ -130,11 +110,4 @@ void AStateSaveObject::SpawnHandler(AActor * InActor)
 	{
 		SavedStates[i]->OnSpawnChange(InActor);
 	}
-
-	/*
-	for (USaveState* SaveState : SavedStates)
-	{
-		SaveState->OnSpawnChange(InActor);
-	}
-	*/
 }
