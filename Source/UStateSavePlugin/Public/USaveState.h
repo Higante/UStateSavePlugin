@@ -6,7 +6,17 @@
 #include "GameFramework/Actor.h"
 #include "Serialization/MemoryWriter.h"
 #include "Serialization/MemoryReader.h"
+#include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "USaveState.generated.h"
+
+struct USTATESAVEPLUGIN_API FSaveStateGameArchive : public FObjectAndNameAsStringProxyArchive
+{
+	FSaveStateGameArchive(FArchive& InInnerArchive)
+		: FObjectAndNameAsStringProxyArchive(InInnerArchive, true)
+	{
+		ArIsSaveGame = true;
+	}
+};
 
 /**
  * Struct holding the relevant information about the Saved Object.
@@ -14,41 +24,30 @@
 USTRUCT()
 struct FSavedObjectInfo
 {
-	GENERATED_BODY()
+	GENERATED_USTRUCT_BODY()
 
 public:
 	// Optional Variables
+	UPROPERTY()
 	UClass* ActorClass;
-
-	FVector ActorLocation;
-	FRotator ActorRotation;
+	FString ActorName;
+	FTransform ActorTransform;
 	TArray<uint8> ActorData;
 
 	FSavedObjectInfo()
 	{
 		ActorClass = AActor::StaticClass();
-
-		ActorLocation = FVector();
-		ActorRotation = FRotator();
+		ActorName = FString();
+		ActorTransform = FTransform();
 		ActorData = {};
 	}
 
 	FSavedObjectInfo(AActor* InputActor)
 	{
 		ActorClass = InputActor->GetClass();
-		ActorLocation = InputActor->GetActorLocation();
-		ActorRotation = InputActor->GetActorRotation();
-
+		ActorName = InputActor->GetName();
+		ActorTransform = InputActor->GetActorTransform();
 		ActorData = {};
-	}
-
-	FORCEINLINE FArchive& Serialize(FArchive& Archive)
-	{
-		Archive << ActorClass;
-		Archive << ActorLocation;
-		Archive << ActorRotation;
-		Archive << ActorData;
-		return Archive;
 	}
 };
 
@@ -68,13 +67,11 @@ public:
 	void OnDeleteChange(AActor* InActor);
 
 private:
-	// Save Objects etc.
 	TArray<UClass*> SavedClasses;
-	UPROPERTY()
 	TArray<AActor*> ObjectsToDelete;
-	UPROPERTY()
 	TArray<FSavedObjectInfo> ObjectsToSpawn;
 
 	void ClearContents();
 	AActor* CreateSpawningActor(AActor* InActor);
+	TArray<AActor*> GetEligibleActorsToSave(UWorld* InWorld, TArray<UClass*> TRefClasses);
 };

@@ -17,18 +17,15 @@ class USTATESAVEPLUGIN_API AStateSaveObject : public AActor
 public:
 	UWorld* World;
 
-	// Change to Editor Only
-	UPROPERTY(EditAnywhere)
-	int MaximumSaveStates = 3;
-
 	UPROPERTY(EditAnywhere)
 	bool bDebug = false;
 
-	// Temporary Values until Alternative implemented
 	UPROPERTY(EditAnywhere)
 	bool bSave = false;
 	UPROPERTY(EditAnywhere)
 	bool bLoad = false;
+	UPROPERTY(EditAnywhere)
+	int MaximumSaveStates = 3;
 	UPROPERTY(EditAnywhere)
 	int SlotToWork = 0;
 
@@ -37,6 +34,7 @@ public:
 	TArray<UClass*> ClassesToSave;
 
 private:
+	UPROPERTY()
 	TArray<USaveState*> SavedStates;
 	
 // Functions

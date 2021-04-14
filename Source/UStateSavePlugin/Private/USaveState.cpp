@@ -18,28 +18,23 @@ void USaveState::ClearContents()
 	ObjectsToSpawn.Empty();
 }
 
-bool USaveState::Save(UWorld * World, TArray<UClass*>& ToSave)
+bool USaveState::Save(UWorld * World, TArray<UClass*>& ClassesToSave)
 {
 	ClearContents();
-	SavedClasses = ToSave;
+	SavedClasses = ClassesToSave;
 
-	for (UClass* RefClass : ToSave)
+	TArray<AActor*> ActorsToSave = GetEligibleActorsToSave(World, SavedClasses);
+	for (AActor* FoundActor : ActorsToSave)
 	{
-		TArray<AActor*> OutArray = TArray<AActor*>();
-		UGameplayStatics::GetAllActorsOfClass(World, RefClass, OutArray);
-
-		for (AActor* FoundActor : OutArray)
+		if (Cast<UPrimitiveComponent>(FoundActor->GetRootComponent()) != nullptr && Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->Mobility == EComponentMobility::Movable)
 		{
-			if (Cast<UPrimitiveComponent>(FoundActor->GetRootComponent()) != nullptr && Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->Mobility == EComponentMobility::Movable)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("%s: Added %s to SavedState. PrimitiveComponent"), TEXT(__FUNCTION__), *FoundActor->GetName());
-				SavedState.Add(FoundActor->GetName(), FSavedObjectInfo(FoundActor));
-			}
-			else if (Cast<USceneComponent>(FoundActor->GetRootComponent()) != nullptr && Cast<USceneComponent>(FoundActor->GetRootComponent())->Mobility == EComponentMobility::Movable)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("%s: Added %s to SavedState. SceneComponent"), TEXT(__FUNCTION__), *FoundActor->GetName());
-				SavedState.Add(FoundActor->GetName(), FSavedObjectInfo(FoundActor));
-			}
+			UE_LOG(LogTemp, Warning, TEXT("%s: Added %s to SavedState. PrimitiveComponent"), TEXT(__FUNCTION__), *FoundActor->GetName());
+			SavedState.Add(FoundActor->GetName(), FSavedObjectInfo(FoundActor));
+		}
+		else if (Cast<USceneComponent>(FoundActor->GetRootComponent()) != nullptr && Cast<USceneComponent>(FoundActor->GetRootComponent())->Mobility == EComponentMobility::Movable)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("%s: Added %s to SavedState. SceneComponent"), TEXT(__FUNCTION__), *FoundActor->GetName());
+			SavedState.Add(FoundActor->GetName(), FSavedObjectInfo(FoundActor));
 		}
 	}
 
@@ -48,7 +43,6 @@ bool USaveState::Save(UWorld * World, TArray<UClass*>& ToSave)
 
 bool USaveState::Load(UWorld * World)
 {
-	UE_LOG(LogTemp, Display, TEXT("Start to Load SaveState!"));
 	for (AActor* ToDelete : ObjectsToDelete)
 	{
 		UE_LOG(LogTemp, Display, TEXT("Start To delete Object!"));
@@ -57,13 +51,18 @@ bool USaveState::Load(UWorld * World)
 
 	for (FSavedObjectInfo ObjectRecord : ObjectsToSpawn)
 	{
-		check(ObjectRecord.ActorClass != NULL);
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Name = FName(*ObjectRecord.ActorName);
+		FTransform TempTransform = ObjectRecord.ActorTransform;
 
-		AActor* NewActor = World->SpawnActor(ObjectRecord.ActorClass, &ObjectRecord.ActorLocation, &ObjectRecord.ActorRotation);
-		UE_LOG(LogTemp, Warning, TEXT("%s: Class %s Actor spawned."), TEXT(__FUNCTION__), *ObjectRecord.ActorClass->GetName());
+		AActor* NewActor = World->SpawnActor(ObjectRecord.ActorClass, 
+			&TempTransform, SpawnParameters);
+		UE_LOG(LogTemp, Warning, TEXT("%s: Class %s Actor spawned."), 
+			TEXT(__FUNCTION__), *ObjectRecord.ActorClass->GetName());
 		
-		FMemoryReader Reader = FMemoryReader(ObjectRecord.ActorData);
-		NewActor->Serialize(Reader);
+		FMemoryReader Reader(ObjectRecord.ActorData, true);
+		FSaveStateGameArchive Archive(Reader);
+		NewActor->Serialize(Archive);
 		UE_LOG(LogTemp, Display, TEXT("Spawning Object Complete!"));
 	}
 
@@ -71,34 +70,26 @@ bool USaveState::Load(UWorld * World)
 	ObjectsToDelete = TArray<AActor*>();
 	ObjectsToSpawn = TArray<FSavedObjectInfo>();
 
-	// TODO: Search for a better alternative to this bit.
-	for (UClass* RefClass : SavedClasses)
+	TArray<AActor*> PotentialLoad = GetEligibleActorsToSave(World, SavedClasses);
+	for (AActor* FoundActor : PotentialLoad)
 	{
-		// Get the Actors of the Class within the World
-		TArray<AActor*> OutActors = TArray<AActor*>();
-		UGameplayStatics::GetAllActorsOfClass(World, RefClass, OutActors);
-
-		for (AActor* FoundActor : OutActors)
+		if (SavedState.Find(FoundActor->GetName()) != nullptr)
 		{
-			if (SavedState.Find(FoundActor->GetName()) != nullptr)
+			FSavedObjectInfo* SavedInfo = SavedState.Find(FoundActor->GetName());
+			if (SavedInfo != nullptr)
 			{
-				FSavedObjectInfo* SavedInfo = SavedState.Find(FoundActor->GetName());
-				if (SavedInfo != nullptr)
-				{
-					// Set Saved Infos
-					FoundActor->SetActorLocation(SavedInfo->ActorLocation);
-					FoundActor->SetActorRotation(SavedInfo->ActorRotation);
+				// Set Saved Infos
+				FoundActor->SetActorTransform(SavedInfo->ActorTransform);
 
-					// Velocity to 0 (Check if it may throw an error)
-					if (Cast<UPrimitiveComponent>(FoundActor->GetRootComponent()) != nullptr)
-					{
-						Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsLinearVelocity(FVector());
-						Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsAngularVelocityInDegrees(FVector());
-					}
-					else if (Cast<USceneComponent>(FoundActor->GetRootComponent()) != nullptr)
-					{
-						Cast<USceneComponent>(FoundActor->GetRootComponent())->ComponentVelocity = FVector();
-					}
+				// Velocity to 0 (Check if it may throw an error)
+				if (Cast<UPrimitiveComponent>(FoundActor->GetRootComponent()) != nullptr)
+				{
+					Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsLinearVelocity(FVector());
+					Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsAngularVelocityInDegrees(FVector());
+				}
+				else if (Cast<USceneComponent>(FoundActor->GetRootComponent()) != nullptr)
+				{
+					Cast<USceneComponent>(FoundActor->GetRootComponent())->ComponentVelocity = FVector();
 				}
 			}
 		}
@@ -122,18 +113,27 @@ void USaveState::OnDeleteChange(AActor * InActor)
 	if (ObjectsToDelete.Contains(InActor))
 	{
 		ObjectsToDelete.Remove(InActor);
-		UE_LOG(LogTemp, Display, TEXT("%s: Removing Data from List of to be deleted. New Amount = %d"), TEXT(__FUNCTION__), ObjectsToDelete.Num());
 		return;
 	}
-
-	UE_LOG(LogTemp, Display, TEXT("%s: Saving Data of destroyed Actor = %s"), TEXT(__FUNCTION__), *InActor->GetName());
-
+	
 	FSavedObjectInfo ObjectSpawnInfo = FSavedObjectInfo(InActor);
-	FMemoryWriter MemoryWriter(ObjectSpawnInfo.ActorData);
-	MemoryWriter.ArIsSaveGame = true;
-	InActor->Serialize(MemoryWriter);
+	FMemoryWriter MemoryWriter(ObjectSpawnInfo.ActorData, true);
+	FSaveStateGameArchive Archive(MemoryWriter);
+	InActor->Serialize(Archive);
 
-	ObjectsToSpawn.Add(ObjectSpawnInfo);
+	this->ObjectsToSpawn.Add(ObjectSpawnInfo);
+}
 
-	UE_LOG(LogTemp, Display, TEXT("%s: Saving Data Complete! New Amount of Items to Spawn = %d"), TEXT(__FUNCTION__), ObjectsToSpawn.Num());
+TArray<AActor*> USaveState::GetEligibleActorsToSave(UWorld* InWorld, TArray<UClass*> TRefClasses)
+{
+	TArray<AActor*> OutArray = {};
+	
+	for (UClass* RefClass : TRefClasses)
+	{
+		TArray<AActor*> AddToArray = {};
+		UGameplayStatics::GetAllActorsOfClass(InWorld, RefClass, AddToArray);
+		OutArray.Append(AddToArray);
+	}
+
+	return OutArray;
 }
