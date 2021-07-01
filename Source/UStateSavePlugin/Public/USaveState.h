@@ -20,6 +20,7 @@ struct USTATESAVEPLUGIN_API FSaveStateGameArchive : public FObjectAndNameAsStrin
 		: FObjectAndNameAsStringProxyArchive(InInnerArchive, true)
 	{
 		ArIsSaveGame = true;
+		ArNoDelta = true;
 	}
 };
 
@@ -112,5 +113,9 @@ private:
 	 * @param World The Reference to the GameWorld for which the SaveState has been created by.
 	 * @param ObjectRecord Input Reference to the relevant Object which should be loaded using Serialization.
 	 */
-	void LoadSerilization(UWorld* InWorld, FSavedObjectInfo ObjectRecord);
+	void ApplySerilization(UPARAM(ref) FSavedObjectInfo ObjectRecord, AActor* RefActor);
+
+	void SaveToFile(const FString FilePath);
+
+	bool LoadBytesFromFile(TArray<uint8>& OutBytes, const FString FilePath);
 };

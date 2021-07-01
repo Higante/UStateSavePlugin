@@ -46,15 +46,6 @@ public:
 	bool SaveState(int Slot);
 	bool LoadState(int Slot);
 
-	/**
-	 * This Function is a handler and Dynamic Function which is called once an
-	 * Actor, which is tracked, is destroyed.
-	 * 
-	 * @param InActor The Destroyed Actor in the World
-	 */
-	UFUNCTION()
-	void OnDestroyHandler(AActor* InActor);
-
 private:
 	/**
 	 * This Function will be called to work as a middleman between itself

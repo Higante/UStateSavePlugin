@@ -88,23 +88,12 @@ bool AStateSaveObject::LoadState(int Slot)
 	return SavedStates[Slot]->Load(World);
 }
 
-void AStateSaveObject::OnDestroyHandler(AActor* InActor)
-{
-	UE_LOG(LogTemp, Warning, TEXT("%s : Begin handling the Destruction"), TEXT(__FUNCTION__));
-	for (int i = 0; i < MaximumSaveStates; i++)
-	{
-		SavedStates[i]->OnDeleteChange(InActor);
-	}
-}
-
 void AStateSaveObject::SpawnHandler(AActor * InActor)
 {
 	if (!ClassesToSave.Contains(InActor->GetClass()))
 		return;
 
 	UE_LOG(LogTemp, Warning, TEXT("%s: %s has been spawned."), TEXT(__FUNCTION__), *InActor->GetName());
-
-	InActor->OnDestroyed.AddDynamic(this, &AStateSaveObject::OnDestroyHandler);
 
 	for (int i = 0; i < MaximumSaveStates; i++)
 	{
