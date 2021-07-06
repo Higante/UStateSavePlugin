@@ -67,7 +67,7 @@ class USTATESAVEPLUGIN_API USaveState : public UObject
 	GENERATED_BODY()
 
 public:
-	TMap<FString, FSavedObjectInfo> SavedState;
+	TMap<FString, TSharedPtr<FSavedObjectInfo>> SavedState;
 	TArray<FSavedObjectInfo> ObjectsToSpawn;
 
 	USaveState();
@@ -113,9 +113,11 @@ private:
 	 * @param World The Reference to the GameWorld for which the SaveState has been created by.
 	 * @param ObjectRecord Input Reference to the relevant Object which should be loaded using Serialization.
 	 */
-	void ApplySerilization(UPARAM(ref) FSavedObjectInfo ObjectRecord, AActor* RefActor);
+	void ApplySerilization(TSharedPtr<FSavedObjectInfo> ObjectRecord, AActor* RefActor);
 
+	// TODO: WIP
 	void SaveToFile(const FString FilePath);
 
+	// TODO: WIP
 	bool LoadBytesFromFile(TArray<uint8>& OutBytes, const FString FilePath);
 };

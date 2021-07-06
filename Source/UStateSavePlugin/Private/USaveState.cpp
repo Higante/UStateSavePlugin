@@ -7,7 +7,7 @@
 USaveState::USaveState()
 {
 	SavedClasses = TArray<UClass*>();
-	SavedState = TMap<FString, FSavedObjectInfo>();
+	SavedState = TMap<FString, TSharedPtr<FSavedObjectInfo>>();
 	ObjectsToDelete = TArray<AActor*>();
 }
 
@@ -32,13 +32,13 @@ bool USaveState::Save(UWorld * World, TArray<UClass*>& ClassesToSave)
 			UE_LOG(LogTemp, Warning, TEXT("%s: Added %s to SavedState."),
 				TEXT(__FUNCTION__), *FoundActor->GetName());
 
-			FSavedObjectInfo ObjectSpawnInfo(FoundActor);
-			FMemoryWriter MemoryWriter(ObjectSpawnInfo.ActorData, true);
+			TSharedPtr<FSavedObjectInfo> ObjectSpawnInfo = MakeShareable<FSavedObjectInfo>(new FSavedObjectInfo(FoundActor));
+			FMemoryWriter MemoryWriter(ObjectSpawnInfo->ActorData, true);
 			FSaveStateGameArchive Archive(MemoryWriter);
 			MemoryWriter.Seek(0);
 			FoundActor->Serialize(Archive);
 
-			SavedState.Emplace(FoundActor->GetName(), FSavedObjectInfo(FoundActor));
+			SavedState.Emplace(FoundActor->GetName(), ObjectSpawnInfo);
 		}
 	}
 
@@ -49,60 +49,66 @@ bool USaveState::Save(UWorld * World, TArray<UClass*>& ClassesToSave)
 
 bool USaveState::Load(UWorld * World)
 {
+	// Delete Objects which have no reason to stay any longer.
 	for (int i = 0; ObjectsToDelete.IsValidIndex(i); i++)
 	{
-		if (ObjectsToDelete[i] != nullptr)
-		{
+		if (ObjectsToDelete[i])
 			ObjectsToDelete[i]->Destroy();
-		}
 	}
 
 	// Clear Array
 	ObjectsToDelete = TArray<AActor*>();
 
-	TMap<FString, FSavedObjectInfo> CopiedMap = SavedState;
+	TMap<FString, TSharedPtr<FSavedObjectInfo>> CopiedMap = SavedState;
 	for (AActor* FoundActor : GetEligibleActors(World, SavedClasses))
 	{
-		FSavedObjectInfo* SavedInfo = SavedState.Find(FoundActor->GetName());
-		if (SavedInfo != nullptr)
+		if (SavedState.Find(FoundActor->GetName()))
 		{
-			FoundActor->SetActorTransform(SavedInfo->ActorTransform);
-			ApplySerilization(*SavedInfo, FoundActor);
-
-			// Set Velocity etc. to zero.
-			UPrimitiveComponent* RefRootC = Cast<UPrimitiveComponent>(FoundActor->GetRootComponent());
-			if (RefRootC != nullptr)
+			TSharedPtr<FSavedObjectInfo> SavedInfo =  
+				*SavedState.Find(FoundActor->GetName());
+			if (SavedInfo)
 			{
-				RefRootC->SetPhysicsLinearVelocity(FVector());
-				RefRootC->SetPhysicsAngularVelocityInDegrees(FVector());
+				FoundActor->SetActorTransform(SavedInfo->ActorTransform);
+				ApplySerilization(SavedInfo, FoundActor);
+
+				// Set Velocity etc. to zero.
+				UPrimitiveComponent* RefRootC = 
+					Cast<UPrimitiveComponent>(FoundActor->GetRootComponent());
+				if (RefRootC != nullptr)
+				{
+					RefRootC->SetPhysicsLinearVelocity(FVector());
+					RefRootC->SetPhysicsAngularVelocityInDegrees(FVector());
+				}
+				
+				CopiedMap.Remove(FoundActor->GetName());
 			}
-			
-			CopiedMap.Remove(FoundActor->GetName());
 		}
 	}
 	
-	TArray<FSavedObjectInfo> TempArray = TArray<FSavedObjectInfo>();
+	TArray<TSharedPtr<FSavedObjectInfo>> TempArray = 
+		TArray<TSharedPtr<FSavedObjectInfo>>();
 	CopiedMap.GenerateValueArray(TempArray);
 	for (int i = 0; TempArray.IsValidIndex(i); i++)
 	{
 		// Create the new actor
-		FSavedObjectInfo ObjectRecord = TempArray[i];
+		TSharedPtr<FSavedObjectInfo> ObjectRecord = TempArray[i];
 		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.Name = FName(*ObjectRecord.ActorName);
+		SpawnParameters.Name = FName(*ObjectRecord->ActorName);
 
 		FTransform TempTransform = FTransform();
-		AActor* NewActor = World->SpawnActor(ObjectRecord.ActorClass, 
+		AActor* NewActor = World->SpawnActor(ObjectRecord->ActorClass, 
 			&TempTransform, SpawnParameters);
-		NewActor->SetActorLabel(*ObjectRecord.ActorName);
+		NewActor->SetActorLabel(*ObjectRecord->ActorName);
+		NewActor->SetActorTransform(ObjectRecord->ActorTransform);
 
-		UPrimitiveComponent* RefRootC = Cast<UPrimitiveComponent>(NewActor->GetRootComponent());
-		if (RefRootC != nullptr)
+		UPrimitiveComponent* RefRootC = 
+			Cast<UPrimitiveComponent>(NewActor->GetRootComponent());
+		if (RefRootC)
 			RefRootC->SetMobility(EComponentMobility::Movable);
 		
-		NewActor->SetActorTransform(ObjectRecord.ActorTransform);
-		if (ObjectRecord.ActorStaticMeshRef != nullptr)
+		if (ObjectRecord->ActorStaticMeshRef)
 			Cast<AStaticMeshActor>(NewActor)->GetStaticMeshComponent()->
-				SetStaticMesh(ObjectRecord.ActorStaticMeshRef);
+				SetStaticMesh(ObjectRecord->ActorStaticMeshRef);
 
 		// Apply Serialization.
 		ApplySerilization(ObjectRecord, NewActor);
@@ -131,12 +137,11 @@ TArray<AActor*> USaveState::GetEligibleActors(UWorld* InWorld, TArray<UClass*> T
 	return OutArray;
 }
 
-void USaveState::ApplySerilization(FSavedObjectInfo ActorProxy, AActor* RefActor)
+void USaveState::ApplySerilization(TSharedPtr<FSavedObjectInfo> ActorProxy, AActor* RefActor)
 {
-	UE_LOG(LogTemp, Warning, TEXT("%s: Loading %d amount from the Byte Array."), TEXT(__FUNCTION__), ActorProxy.ActorData.Num());
-	FMemoryReader Reader(ActorProxy.ActorData, true);
+	UE_LOG(LogTemp, Warning, TEXT("%s: Loading %d amount from the Byte Array."), TEXT(__FUNCTION__), ActorProxy->ActorData.Num());
+	FMemoryReader Reader(ActorProxy->ActorData, true);
 	FSaveStateGameArchive Archive(Reader);
-	Reader.Seek(0);
 	RefActor->Serialize(Archive);
 }
 
@@ -148,9 +153,9 @@ void USaveState::SaveToFile(const FString FilePath)
 	//MemoryWriter.Seek(0);
 	FArchive Archive(MemoryWriter);
 	FBufferArchive BinaryData;
-	for (TPair<FString,FSavedObjectInfo> ToSave : SavedState)
+	for (TPair<FString,TSharedPtr<FSavedObjectInfo>> ToSave : SavedState)
 	{
-		BinaryData << ToSave.Get<1>();
+		//BinaryData << ToSave.Get<1>();
 		FFileHelper::SaveArrayToFile(BinaryData, *FilePath);
 	}
 }
