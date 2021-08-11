@@ -3,26 +3,8 @@
 #include "CoreMinimal.h"
 #include "Containers/Map.h"
 #include "Engine/StaticMesh.h"
-#include "Engine/World.h"
-#include "GameFramework/Actor.h"
-#include "Serialization/MemoryWriter.h"
-#include "Serialization/MemoryReader.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "USaveState.generated.h"
-
-/**
- * TODO: Write bit more.
- * Archive which works as a proxy to Serialize Objects in a way that works.
- */
-struct USTATESAVEPLUGIN_API FSaveStateGameArchive : public FObjectAndNameAsStringProxyArchive
-{
-	FSaveStateGameArchive(FArchive& InInnerArchive)
-		: FObjectAndNameAsStringProxyArchive(InInnerArchive, true)
-	{
-		ArIsSaveGame = true;
-		ArNoDelta = true;
-	}
-};
 
 /**
  * Custom Struct holding Informations and the Bytes to recreate an Actors using
@@ -34,32 +16,36 @@ struct FSavedObjectInfo
 	GENERATED_USTRUCT_BODY()
 
 public:
-	// Optional Variables
-	UPROPERTY()
-	UClass* ActorClass;
-	FString ActorName;
+	FName ActorName;
 	FTransform ActorTransform;
-	UStaticMesh* ActorStaticMeshRef;
 	TArray<uint8> ActorData;
+	TArray<uint8> StaticMeshData;
+	UClass* ActorClass;
+	UObject* OuterObject;
+	int32 OuterID;
 
 	FSavedObjectInfo()
 	{
 		ActorClass = AActor::StaticClass();
-		ActorName = FString();
-		ActorTransform = FTransform();
-		ActorStaticMeshRef = nullptr;
 		ActorData = TArray<uint8>();
+		ActorName = FName();
+		ActorTransform = FTransform();
+		OuterObject = nullptr;
+		OuterID = 0;
 	}
 
 	FSavedObjectInfo(AActor* InputActor)
 	{
 		ActorClass = InputActor->GetClass();
-		ActorName = InputActor->GetName();
-		ActorTransform = InputActor->GetActorTransform();
-		ActorStaticMeshRef = nullptr;
 		ActorData = TArray<uint8>();
+		StaticMeshData = TArray<uint8>();
+		ActorName = InputActor->GetFName();
+		ActorTransform = InputActor->GetActorTransform();
+		OuterObject = InputActor->GetOuter();
+		OuterID = InputActor->GetOuter()->GetUniqueID();
 	}
 };
+
 
 UCLASS()
 class USTATESAVEPLUGIN_API USaveState : public UObject
@@ -100,20 +86,20 @@ private:
 	/**
 	 * Auxialiary Function. Helps getting all the relevant Actors in a InputWorld into one TArray. 
 	 * 
-	 * ? Is this truly something the SaveGame should check
 	 * @param World The Reference to the GameWorld for which the SaveState should check for
 	 * @param TRefClasses An Array of Classes which are looked for.
 	 * @return Unsorted TArray of Actors which have been found.
 	 */
 	TArray<AActor*> GetEligibleActors(UWorld* InWorld, TArray<UClass*> TRefClasses);
 
+	TArray<uint8> SaveSerilization(AActor* SaveObject);
+
 	/**
 	 * Auxialiary Function. Helps, using Serialize, loading Objects which have been deleted.
 	 * 
-	 * @param World The Reference to the GameWorld for which the SaveState has been created by.
 	 * @param ObjectRecord Input Reference to the relevant Object which should be loaded using Serialization.
 	 */
-	void ApplySerilization(TSharedPtr<FSavedObjectInfo> ObjectRecord, AActor* RefActor);
+	void ApplySerilizationActor(TArray<uint8> ObjectRecord, AActor* LoadObject);
 
 	// TODO: WIP
 	void SaveToFile(const FString FilePath);

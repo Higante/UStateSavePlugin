@@ -1,8 +1,14 @@
 #include "USaveState.h"
-#include "Engine/StaticMeshActor.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/StaticMeshActor.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
 #include "Kismet/GameplayStatics.h"
 #include "Serialization/BufferArchive.h"
+#include "Serialization/MemoryReader.h"
+#include "Serialization/MemoryWriter.h"
+#include "Serialization/ObjectReader.h"
+#include "Serialization/ObjectWriter.h"
 
 USaveState::USaveState()
 {
@@ -29,34 +35,17 @@ bool USaveState::Save(UWorld * World, TArray<UClass*>& ClassesToSave)
 		UPrimitiveComponent* RootRefC = Cast<UPrimitiveComponent>(FoundActor->GetRootComponent());
 		if (RootRefC != nullptr && RootRefC->Mobility == EComponentMobility::Movable)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("%s: Added %s to SavedState."),
-				TEXT(__FUNCTION__), *FoundActor->GetName());
-
 			TSharedPtr<FSavedObjectInfo> ObjectSpawnInfo = MakeShareable<FSavedObjectInfo>(new FSavedObjectInfo(FoundActor));
-			FMemoryWriter MemoryWriter(ObjectSpawnInfo->ActorData, true);
-			FSaveStateGameArchive Archive(MemoryWriter);
-			MemoryWriter.Seek(0);
-			FoundActor->Serialize(Archive);
+			ObjectSpawnInfo->ActorData = SaveSerilization(FoundActor);
 
 			SavedState.Emplace(FoundActor->GetName(), ObjectSpawnInfo);
 		}
 	}
-
-	//SaveToFile(FileToSaveOn);
-
 	return true;
 }
 
 bool USaveState::Load(UWorld * World)
 {
-	// Delete Objects which have no reason to stay any longer.
-	for (int i = 0; ObjectsToDelete.IsValidIndex(i); i++)
-	{
-		if (ObjectsToDelete[i])
-			ObjectsToDelete[i]->Destroy();
-	}
-
-	// Clear Array
 	ObjectsToDelete = TArray<AActor*>();
 
 	TMap<FString, TSharedPtr<FSavedObjectInfo>> CopiedMap = SavedState;
@@ -69,7 +58,6 @@ bool USaveState::Load(UWorld * World)
 			if (SavedInfo)
 			{
 				FoundActor->SetActorTransform(SavedInfo->ActorTransform);
-				ApplySerilization(SavedInfo, FoundActor);
 
 				// Set Velocity etc. to zero.
 				UPrimitiveComponent* RefRootC = 
@@ -79,41 +67,31 @@ bool USaveState::Load(UWorld * World)
 					RefRootC->SetPhysicsLinearVelocity(FVector());
 					RefRootC->SetPhysicsAngularVelocityInDegrees(FVector());
 				}
-				
 				CopiedMap.Remove(FoundActor->GetName());
 			}
 		}
 	}
 	
-	TArray<TSharedPtr<FSavedObjectInfo>> TempArray = 
+	// Create UObjects
+	TArray<TSharedPtr<FSavedObjectInfo>> LoadObjectRecords = 
 		TArray<TSharedPtr<FSavedObjectInfo>>();
-	CopiedMap.GenerateValueArray(TempArray);
-	for (int i = 0; TempArray.IsValidIndex(i); i++)
-	{
-		// Create the new actor
-		TSharedPtr<FSavedObjectInfo> ObjectRecord = TempArray[i];
-		FActorSpawnParameters SpawnParameters;
-		SpawnParameters.Name = FName(*ObjectRecord->ActorName);
 
+	CopiedMap.GenerateValueArray(LoadObjectRecords);
+	for (int i = 0; LoadObjectRecords.IsValidIndex(i); i++)
+	{
+		TSharedPtr<FSavedObjectInfo> ObjectRecord = LoadObjectRecords[i];
+
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Name = ObjectRecord->ActorName;
+		SpawnParameters.OverrideLevel = World->PersistentLevel;
 		FTransform TempTransform = FTransform();
 		AActor* NewActor = World->SpawnActor(ObjectRecord->ActorClass, 
 			&TempTransform, SpawnParameters);
-		NewActor->SetActorLabel(*ObjectRecord->ActorName);
+
+		ApplySerilizationActor(ObjectRecord->ActorData, NewActor);
 		NewActor->SetActorTransform(ObjectRecord->ActorTransform);
-
-		UPrimitiveComponent* RefRootC = 
-			Cast<UPrimitiveComponent>(NewActor->GetRootComponent());
-		if (RefRootC)
-			RefRootC->SetMobility(EComponentMobility::Movable);
-		
-		if (ObjectRecord->ActorStaticMeshRef)
-			Cast<AStaticMeshActor>(NewActor)->GetStaticMeshComponent()->
-				SetStaticMesh(ObjectRecord->ActorStaticMeshRef);
-
-		// Apply Serialization.
-		ApplySerilization(ObjectRecord, NewActor);
+		NewActor->UpdateComponentTransforms();
 	}
-
 	return true;
 }
 
@@ -137,25 +115,52 @@ TArray<AActor*> USaveState::GetEligibleActors(UWorld* InWorld, TArray<UClass*> T
 	return OutArray;
 }
 
-void USaveState::ApplySerilization(TSharedPtr<FSavedObjectInfo> ActorProxy, AActor* RefActor)
+TArray<uint8> USaveState::SaveSerilization(AActor* SaveObject)
 {
-	UE_LOG(LogTemp, Warning, TEXT("%s: Loading %d amount from the Byte Array."), TEXT(__FUNCTION__), ActorProxy->ActorData.Num());
-	FMemoryReader Reader(ActorProxy->ActorData, true);
-	FSaveStateGameArchive Archive(Reader);
-	RefActor->Serialize(Archive);
+	TArray<uint8> OutputData;
+	FMemoryWriter MemoryWriter(OutputData, true);
+	FObjectAndNameAsStringProxyArchive Archive(MemoryWriter, true);
+	SaveObject->Serialize(Archive);
+
+	// Components Begin
+	TArray<UActorComponent*> ChildComponents;
+	SaveObject->GetComponents(ChildComponents);
+
+	for (UActorComponent* CompToSave : ChildComponents)
+	{
+		CompToSave->Serialize(Archive);
+	}
+	// Components End
+
+	return OutputData;
+}
+
+void USaveState::ApplySerilizationActor(UPARAM(ref) TArray<uint8> ObjectRecord, AActor* LoadObject)
+{
+	FMemoryReader MemoryReader(ObjectRecord, true);
+	FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
+	LoadObject->Serialize(Archive);
+
+	// Components Begin
+	TArray<UActorComponent*> ChildComponents;
+	LoadObject->GetComponents(ChildComponents);
+
+	for (UActorComponent* CompToLoad : ChildComponents)
+	{
+		CompToLoad->Serialize(Archive);
+	}
+	// Components End
 }
 
 void USaveState::SaveToFile(const FString FilePath)
 {
 	TArray<uint8> SaveBytesStream = TArray<uint8>();
 
-	FMemoryWriter MemoryWriter(SaveBytesStream, true);
-	//MemoryWriter.Seek(0);
+	FMemoryWriter MemoryWriter(SaveBytesStream);
 	FArchive Archive(MemoryWriter);
 	FBufferArchive BinaryData;
 	for (TPair<FString,TSharedPtr<FSavedObjectInfo>> ToSave : SavedState)
 	{
-		//BinaryData << ToSave.Get<1>();
 		FFileHelper::SaveArrayToFile(BinaryData, *FilePath);
 	}
 }

@@ -19,7 +19,6 @@ public:
 
 	UPROPERTY(EditAnywhere)
 	bool bDebug = false;
-
 	UPROPERTY(EditAnywhere)
 	bool bSave = false;
 	UPROPERTY(EditAnywhere)
@@ -29,16 +28,9 @@ public:
 	UPROPERTY(EditAnywhere)
 	int SlotToWork = 0;
 
-
 	UPROPERTY(EditAnywhere)
 	TArray<UClass*> ClassesToSave;
 
-private:
-	UPROPERTY()
-	TArray<USaveState*> SavedStates;
-	
-// Functions
-public:
 	AStateSaveObject();
 
 	virtual void Tick(float DeltaTime) override;
@@ -46,7 +38,13 @@ public:
 	bool SaveState(int Slot);
 	bool LoadState(int Slot);
 
+protected:
+	virtual void BeginPlay() override;
+
 private:
+	UPROPERTY()
+	TArray<USaveState*> SavedStates;
+	
 	/**
 	 * This Function will be called to work as a middleman between itself
 	 * and SaveStates who then track what needs to be deleted once the need
@@ -56,8 +54,4 @@ private:
 	 */
 	UFUNCTION()
 	void SpawnHandler(AActor* InActor);
-
-protected:
-	virtual void BeginPlay() override;
-
 };
