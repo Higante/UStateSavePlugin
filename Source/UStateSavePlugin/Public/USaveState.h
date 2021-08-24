@@ -2,8 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Containers/Map.h"
+#include "Engine/DemoNetDriver.h"
 #include "Engine/StaticMesh.h"
-#include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "USaveState.generated.h"
 
 /**
@@ -19,10 +19,7 @@ public:
 	FName ActorName;
 	FTransform ActorTransform;
 	TArray<uint8> ActorData;
-	TArray<uint8> StaticMeshData;
 	UClass* ActorClass;
-	UObject* OuterObject;
-	int32 OuterID;
 
 	FSavedObjectInfo()
 	{
@@ -30,19 +27,24 @@ public:
 		ActorData = TArray<uint8>();
 		ActorName = FName();
 		ActorTransform = FTransform();
-		OuterObject = nullptr;
-		OuterID = 0;
 	}
 
-	FSavedObjectInfo(AActor* InputActor)
+	FSavedObjectInfo(const AActor* InputActor)
 	{
 		ActorClass = InputActor->GetClass();
 		ActorData = TArray<uint8>();
-		StaticMeshData = TArray<uint8>();
 		ActorName = InputActor->GetFName();
 		ActorTransform = InputActor->GetActorTransform();
-		OuterObject = InputActor->GetOuter();
-		OuterID = InputActor->GetOuter()->GetUniqueID();
+	}
+
+	friend FORCEINLINE FArchive& operator<<(FArchive &Ar, TSharedPtr<FSavedObjectInfo> SavedObjectInfo)
+	{
+		Ar << SavedObjectInfo->ActorClass;
+		Ar << SavedObjectInfo->ActorName;
+		Ar << SavedObjectInfo->ActorTransform;
+		Ar << SavedObjectInfo->ActorData;
+		
+		return Ar;
 	}
 };
 
@@ -54,56 +56,57 @@ class USTATESAVEPLUGIN_API USaveState : public UObject
 
 public:
 	TMap<FString, TSharedPtr<FSavedObjectInfo>> SavedState;
-	TArray<FSavedObjectInfo> ObjectsToSpawn;
 
 	USaveState();
-	bool Save(UWorld* World, TArray<UClass*>& ToSave);
+	bool Save(UWorld* World, const TArray<UClass*>& ToSave);
 	bool Load(UWorld* World);
 
 	/**
-	 * Workaround Method to track Objects which have been spawned whilst in runtime.
-	 * 
-	 * @param InActor Reference to an Actor which shall be noted down to be deleted later.
+	 * Function to Serialize the SaveState. To be used along to bring it into an USaveGame
+	 *
+	 * @param OutSavedItemAmount An reference to an uint8 on which we're to track how many items we've saved.
+	 * @return The serialized data of this SaveState.
 	 */
-	void OnSpawnChange(AActor* InActor);
+	TArray<uint8> SerializeState(uint8& OutSavedItemAmount) const;
 
 	/**
-	 * Workaround Method to track Objects which have been deleted whilst in runtime.
-	 * 
-	 * @param InActor Reference to an Actor which shall be noted down to be deleted later.
+	 * Function intended to reapply previously serialized data back to be used.
+	 *
+	 * @param SerializedState Data which has been created using Serialize.
+	 * @param InSavedItemAmount Amount of Items which has been saved before.
 	 */
-	void OnDeleteChange(AActor* InActor);
-
+	void ApplySerializeOnState(const TArray<uint8> SerializedState, const uint8& InSavedItemAmount);
+	
 private:
 	TArray<UClass*> SavedClasses;
-	TArray<AActor*> ObjectsToDelete;
 
 	/**
-	 * Auxialiary Function. Clears the SaveStates Internal Variables.
+	 * Auxiliary Function. Clears the SaveStates Internal Variables.
 	 */
 	void ClearContents();
 
 	/**
-	 * Auxialiary Function. Helps getting all the relevant Actors in a InputWorld into one TArray. 
+	 * Auxiliary Function. Helps getting all the relevant Actors in a InputWorld into one TArray. 
 	 * 
-	 * @param World The Reference to the GameWorld for which the SaveState should check for
+	 * @param InWorld The Reference to the GameWorld for which the SaveState should check for
 	 * @param TRefClasses An Array of Classes which are looked for.
 	 * @return Unsorted TArray of Actors which have been found.
 	 */
-	TArray<AActor*> GetEligibleActors(UWorld* InWorld, TArray<UClass*> TRefClasses);
-
-	TArray<uint8> SaveSerilization(AActor* SaveObject);
+	static TArray<AActor*> GetSavableActorsOfClass(UWorld* InWorld, TArray<UClass*> TRefClasses);
 
 	/**
-	 * Auxialiary Function. Helps, using Serialize, loading Objects which have been deleted.
-	 * 
-	 * @param ObjectRecord Input Reference to the relevant Object which should be loaded using Serialization.
+	 * Auxiliary Function, intended to save given Actor in a format which can be restored later on.
+	 *
+	 * @param SaveObject Pointer to an Actor which is not Null.
+	 * @return The Serialized Array of Bytes representing said Actor, able to be restored with Serialize.
 	 */
-	void ApplySerilizationActor(TArray<uint8> ObjectRecord, AActor* LoadObject);
+	static TArray<uint8> SaveSerialization(AActor* SaveObject);
 
-	// TODO: WIP
-	void SaveToFile(const FString FilePath);
-
-	// TODO: WIP
-	bool LoadBytesFromFile(TArray<uint8>& OutBytes, const FString FilePath);
+	/**
+	 * Auxiliary Function. Helps, using Serialize, loading Objects which have been deleted.
+	 * 
+	 * @param ObjectRecord Reference to an Array holding the serialized Actor Data.
+	 * @param ObjectToApplyOn Pointer to an Actor on which to apply given serialized data.
+	 */
+	static void ApplySerializationActor(TArray<uint8>& ObjectRecord, AActor* ObjectToApplyOn);
 };

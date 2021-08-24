@@ -3,40 +3,37 @@
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/SaveGame.h"
 #include "Kismet/GameplayStatics.h"
-#include "Serialization/BufferArchive.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
-#include "Serialization/ObjectReader.h"
-#include "Serialization/ObjectWriter.h"
+#include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 
 USaveState::USaveState()
 {
 	SavedClasses = TArray<UClass*>();
 	SavedState = TMap<FString, TSharedPtr<FSavedObjectInfo>>();
-	ObjectsToDelete = TArray<AActor*>();
 }
 
 void USaveState::ClearContents()
 {
 	SavedClasses.Empty();
 	SavedState.Empty();
-	ObjectsToDelete.Empty();
 }
 
-bool USaveState::Save(UWorld * World, TArray<UClass*>& ClassesToSave)
+bool USaveState::Save(UWorld * World, const TArray<UClass*>& ClassesToSave)
 {
 	ClearContents();
 
 	SavedClasses = ClassesToSave;
-	TArray<AActor*> ActorsToSave = GetEligibleActors(World, SavedClasses);
+	TArray<AActor*> ActorsToSave = GetSavableActorsOfClass(World, SavedClasses);
 	for (AActor* FoundActor : ActorsToSave)
 	{
 		UPrimitiveComponent* RootRefC = Cast<UPrimitiveComponent>(FoundActor->GetRootComponent());
 		if (RootRefC != nullptr && RootRefC->Mobility == EComponentMobility::Movable)
 		{
 			TSharedPtr<FSavedObjectInfo> ObjectSpawnInfo = MakeShareable<FSavedObjectInfo>(new FSavedObjectInfo(FoundActor));
-			ObjectSpawnInfo->ActorData = SaveSerilization(FoundActor);
+			ObjectSpawnInfo->ActorData = SaveSerialization(FoundActor);
 
 			SavedState.Emplace(FoundActor->GetName(), ObjectSpawnInfo);
 		}
@@ -46,10 +43,8 @@ bool USaveState::Save(UWorld * World, TArray<UClass*>& ClassesToSave)
 
 bool USaveState::Load(UWorld * World)
 {
-	ObjectsToDelete = TArray<AActor*>();
-
 	TMap<FString, TSharedPtr<FSavedObjectInfo>> CopiedMap = SavedState;
-	for (AActor* FoundActor : GetEligibleActors(World, SavedClasses))
+	for (AActor* FoundActor : GetSavableActorsOfClass(World, SavedClasses))
 	{
 		if (SavedState.Find(FoundActor->GetName()))
 		{
@@ -79,7 +74,7 @@ bool USaveState::Load(UWorld * World)
 	CopiedMap.GenerateValueArray(LoadObjectRecords);
 	for (int i = 0; LoadObjectRecords.IsValidIndex(i); i++)
 	{
-		TSharedPtr<FSavedObjectInfo> ObjectRecord = LoadObjectRecords[i];
+		const TSharedPtr<FSavedObjectInfo> ObjectRecord = LoadObjectRecords[i];
 
 		FActorSpawnParameters SpawnParameters;
 		SpawnParameters.Name = ObjectRecord->ActorName;
@@ -88,19 +83,61 @@ bool USaveState::Load(UWorld * World)
 		AActor* NewActor = World->SpawnActor(ObjectRecord->ActorClass, 
 			&TempTransform, SpawnParameters);
 
-		ApplySerilizationActor(ObjectRecord->ActorData, NewActor);
+		ApplySerializationActor(ObjectRecord->ActorData, NewActor);
 		NewActor->SetActorTransform(ObjectRecord->ActorTransform);
 		NewActor->UpdateComponentTransforms();
 	}
 	return true;
 }
 
-void USaveState::OnSpawnChange(AActor * InActor)
+TArray<uint8> USaveState::SerializeState(uint8& OutSavedItemAmount) const
 {
-	ObjectsToDelete.Emplace(InActor);
+	TArray<uint8> OutputSerialization = {};
+	TArray<FString> ObjectNameArray = {};
+	TArray<TSharedPtr<FSavedObjectInfo>> ObjectInfoArray = {};
+	
+	FMemoryWriter MemoryWriter(OutputSerialization, true);
+	// FArchive Archive(MemoryWriter, true)
+	
+	SavedState.GenerateKeyArray(ObjectNameArray);
+	SavedState.GenerateValueArray(ObjectInfoArray);
+
+	for (OutSavedItemAmount = 0; OutSavedItemAmount < SavedState.Num(); OutSavedItemAmount++)
+	{
+		MemoryWriter << ObjectNameArray[OutSavedItemAmount];
+		MemoryWriter << ObjectInfoArray[OutSavedItemAmount];
+	}
+
+	return OutputSerialization;
 }
 
-TArray<AActor*> USaveState::GetEligibleActors(UWorld* InWorld, TArray<UClass*> TRefClasses)
+void USaveState::ApplySerializeOnState(const TArray<uint8> SerializedState, const uint8& InSavedItemAmount)
+{
+	// TODO: Find a method
+	TArray<FString> ObjectNameArray = {};
+	TArray<TSharedPtr<FSavedObjectInfo>> ObjectInfoArray = {};
+	
+	FMemoryReader MemoryReader(SerializedState, true);
+	SavedState.Empty();
+
+	for (uint8 Counter = 0; InSavedItemAmount > Counter; Counter++)
+	{
+		FString ObjectName = FString();
+		TSharedPtr<FSavedObjectInfo> ObjectData = TSharedPtr<FSavedObjectInfo>();
+		
+		MemoryReader << ObjectName;
+		ObjectNameArray.Add(ObjectName);
+		MemoryReader << ObjectData;
+		ObjectInfoArray.Add(ObjectData);
+
+		UE_LOG(LogTemp, Warning, TEXT("Adding %s"), *ObjectName);
+
+		SavedState.Add(ObjectName, ObjectData);
+	}
+}
+
+
+TArray<AActor*> USaveState::GetSavableActorsOfClass(UWorld* InWorld, TArray<UClass*> TRefClasses)
 {
 	check(InWorld);
 	TArray<AActor*> OutArray = TArray<AActor*>();
@@ -115,7 +152,7 @@ TArray<AActor*> USaveState::GetEligibleActors(UWorld* InWorld, TArray<UClass*> T
 	return OutArray;
 }
 
-TArray<uint8> USaveState::SaveSerilization(AActor* SaveObject)
+TArray<uint8> USaveState::SaveSerialization(AActor* SaveObject)
 {
 	TArray<uint8> OutputData;
 	FMemoryWriter MemoryWriter(OutputData, true);
@@ -135,37 +172,19 @@ TArray<uint8> USaveState::SaveSerilization(AActor* SaveObject)
 	return OutputData;
 }
 
-void USaveState::ApplySerilizationActor(UPARAM(ref) TArray<uint8> ObjectRecord, AActor* LoadObject)
+void USaveState::ApplySerializationActor(UPARAM(ref) TArray<uint8>& ObjectRecord, AActor* ObjectToApplyOn)
 {
 	FMemoryReader MemoryReader(ObjectRecord, true);
 	FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
-	LoadObject->Serialize(Archive);
+	ObjectToApplyOn->Serialize(Archive);
 
 	// Components Begin
 	TArray<UActorComponent*> ChildComponents;
-	LoadObject->GetComponents(ChildComponents);
+	ObjectToApplyOn->GetComponents(ChildComponents);
 
 	for (UActorComponent* CompToLoad : ChildComponents)
 	{
 		CompToLoad->Serialize(Archive);
 	}
 	// Components End
-}
-
-void USaveState::SaveToFile(const FString FilePath)
-{
-	TArray<uint8> SaveBytesStream = TArray<uint8>();
-
-	FMemoryWriter MemoryWriter(SaveBytesStream);
-	FArchive Archive(MemoryWriter);
-	FBufferArchive BinaryData;
-	for (TPair<FString,TSharedPtr<FSavedObjectInfo>> ToSave : SavedState)
-	{
-		FFileHelper::SaveArrayToFile(BinaryData, *FilePath);
-	}
-}
-
-bool USaveState::LoadBytesFromFile(TArray<uint8>& OutBytes, const FString FilePath)
-{
-	return FFileHelper::LoadFileToArray(OutBytes, *FilePath);
 }

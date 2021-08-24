@@ -2,10 +2,8 @@
 
 #pragma once
 
-#include <CoreMinimal.h>
-#include <Engine/World.h>
-#include <GameFramework/Actor.h>
-#include <Map.h>
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
 #include "USaveState.h"
 #include "AStateSaveObject.generated.h"
 
@@ -15,18 +13,12 @@ class USTATESAVEPLUGIN_API AStateSaveObject : public AActor
 	GENERATED_BODY()
 // Variables
 public:
-	UWorld* World;
-
 	UPROPERTY(EditAnywhere)
 	bool bDebug = false;
 	UPROPERTY(EditAnywhere)
 	bool bSave = false;
 	UPROPERTY(EditAnywhere)
 	bool bLoad = false;
-	UPROPERTY(EditAnywhere)
-	int MaximumSaveStates = 3;
-	UPROPERTY(EditAnywhere)
-	int SlotToWork = 0;
 
 	UPROPERTY(EditAnywhere)
 	TArray<UClass*> ClassesToSave;
@@ -35,15 +27,15 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
-	bool SaveState(int Slot);
-	bool LoadState(int Slot);
+	bool SaveState(const FString FileName, const FString FilePath);
+	bool LoadState(const FString FileName, const FString FilePath);
 
 protected:
 	virtual void BeginPlay() override;
 
 private:
-	UPROPERTY()
-	TArray<USaveState*> SavedStates;
+	const FString SaveFilePath;
+	TSharedPtr<USaveState> SavedState;
 	
 	/**
 	 * This Function will be called to work as a middleman between itself
