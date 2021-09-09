@@ -9,6 +9,7 @@
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSaveThisState, FString, SaveFileName, FString, SaveFilePath);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLoadThisState, FString, LoadFileName, FString, SaveFilePath);
+DECLARE_DYNAMIC_DELEGATE_RetVal(TArray<FString>, FListAllFilesInFolder);
 
 UCLASS()
 class USTATESAVEPLUGIN_API AStateSaveObject : public AActor
@@ -36,12 +37,13 @@ public:
 	void LoadState(FString FileName,FString FilePath);
 
 	UFUNCTION()
-	TArray<FString> ListAllSaveFilesAtLocation() const;
+	TArray<FString> ListAllSaveFilesAtLocation();
 
 protected:
 	virtual void BeginPlay() override;
 	FSaveThisState SaveDelegate;
 	FLoadThisState LoadDelegate;
+	FListAllFilesInFolder ListDelegate;
 
 private:
 	FString SaveFilePath = FPaths::ProjectSavedDir() + "UStateSavePlugin/";

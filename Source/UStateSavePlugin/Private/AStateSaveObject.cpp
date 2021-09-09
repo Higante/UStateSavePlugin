@@ -45,6 +45,7 @@ void AStateSaveObject::BeginPlay()
 	// Bind the Dynamic Delegate in Runtime
 	SaveDelegate.AddDynamic(this, &AStateSaveObject::SaveState);
 	LoadDelegate.AddDynamic(this, &AStateSaveObject::LoadState);
+	ListDelegate.BindDynamic(this, &AStateSaveObject::ListAllSaveFilesAtLocation);
 }
 
 /**
@@ -111,7 +112,7 @@ void AStateSaveObject::LoadState(FString FileName, FString FilePath)
 	UE_LOG(LogTemp, Error, TEXT("%s: No save file found compatible with this world."), TEXT(__FUNCTION__));
 }
 
-TArray<FString> AStateSaveObject::ListAllSaveFilesAtLocation() const
+TArray<FString> AStateSaveObject::ListAllSaveFilesAtLocation()
 {
 	TArray<FString> OutputArray = TArray<FString>();
 	IFileManager::Get().FindFiles(OutputArray, *SaveFilePath, *FString("sav"));

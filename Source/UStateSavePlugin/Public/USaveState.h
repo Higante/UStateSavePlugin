@@ -94,6 +94,7 @@ private:
 	 * @param TRefClasses An Array of Classes which are looked for.
 	 * @return Unsorted TArray of Actors which have been found.
 	 */
+	UFUNCTION()
 	static TArray<AActor*> GetSavableActorsOfClass(UWorld* InWorld, TArray<UClass*> TRefClasses);
 
 	/**

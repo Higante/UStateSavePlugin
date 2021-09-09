@@ -52,7 +52,10 @@ bool USaveState::Save(UWorld * World, const TArray<TSubclassOf<AActor>>& Classes
 bool USaveState::Load(UWorld * World)
 {
 	TMap<FString, FSavedObjectInfo*> CopiedMap = SavedState;
+	TArray<AActor*> ActorsToDelete = TArray<AActor*>();
 	TArray<AActor*> ActorArray = GetSavableActorsOfClass(World, SavedClasses);
+
+	// Move Objects if they still reside within the Level.
 	for (AActor* FoundActor : ActorArray)
 	{
 		if (SavedState.Find(FoundActor->GetName()))
@@ -71,14 +74,26 @@ bool USaveState::Load(UWorld * World)
 					RefRootC->SetPhysicsLinearVelocity(FVector());
 					RefRootC->SetPhysicsAngularVelocityInDegrees(FVector());
 				}
+				// Remove Object which have bene found from List.
 				CopiedMap.Remove(FoundActor->GetName());
 			}
 		}
+		else
+		{
+			if (EComponentMobility::Static != FoundActor->GetRootComponent()->Mobility)
+				ActorsToDelete.Add(FoundActor);
+		}
+	}
+
+	// Remove Unlisted Objects
+	for (AActor* ActorToDelete : ActorsToDelete)
+	{
+		UE_LOG(LogTemp, Error, TEXT("DELETING %s"), *ActorToDelete->GetName());
+		ActorToDelete->Destroy();
 	}
 	
-	// Create UObjects
-	TArray<FSavedObjectInfo*> LoadObjectRecords = 
-		TArray<FSavedObjectInfo*>();
+	// Respawn Objects
+	TArray<FSavedObjectInfo*> LoadObjectRecords = TArray<FSavedObjectInfo*>();
 
 	CopiedMap.GenerateValueArray(LoadObjectRecords);
 	for (int i = 0; LoadObjectRecords.IsValidIndex(i); i++)
@@ -96,6 +111,7 @@ bool USaveState::Load(UWorld * World)
 		NewActor->SetActorTransform(ObjectRecord->ActorTransform);
 		NewActor->UpdateComponentTransforms();
 	}
+	
 	return true;
 }
 
@@ -129,7 +145,7 @@ void USaveState::ApplySerializeOnState(const TArray<uint8> SerializedState, cons
 	FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
 	if (SavedState.Num() > 0)
 	{
-		// Something is working right...
+		// SavedState was not cleaned ere using it again.
 		ensure(false);
 		SavedState.Empty();
 	}
@@ -143,6 +159,8 @@ void USaveState::ApplySerializeOnState(const TArray<uint8> SerializedState, cons
 		Archive << ObjectData;
 		ObjectName = ObjectData->ActorName.ToString();
 
+		if (!SavedClasses.Contains(ObjectData->ActorClass))
+			SavedClasses.Add(ObjectData->ActorClass);
 		UE_LOG(LogTemp, Warning, TEXT("Adding %s"), *ObjectName);
 
 		SavedState.Add(ObjectName, ObjectData);
