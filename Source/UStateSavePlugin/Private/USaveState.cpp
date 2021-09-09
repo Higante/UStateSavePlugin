@@ -1,4 +1,6 @@
 #include "USaveState.h"
+
+#include "FileManagerGeneric.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
@@ -12,7 +14,6 @@
 USaveState::USaveState()
 {
 	SavedClasses = TArray<UClass*>();
-	SavedState = TMap<FString, TSharedPtr<FSavedObjectInfo>>();
 }
 
 void USaveState::ClearContents()
@@ -21,18 +22,25 @@ void USaveState::ClearContents()
 	SavedState.Empty();
 }
 
-bool USaveState::Save(UWorld * World, const TArray<UClass*>& ClassesToSave)
+bool USaveState::Save(UWorld * World, const TArray<TSubclassOf<AActor>>& ClassesToSave)
 {
 	ClearContents();
 
-	SavedClasses = ClassesToSave;
+	for (TSubclassOf<AActor> ClassToSave : ClassesToSave)
+	{
+		SavedClasses.Add(ClassToSave.Get());
+	}
+	
 	TArray<AActor*> ActorsToSave = GetSavableActorsOfClass(World, SavedClasses);
 	for (AActor* FoundActor : ActorsToSave)
 	{
 		UPrimitiveComponent* RootRefC = Cast<UPrimitiveComponent>(FoundActor->GetRootComponent());
 		if (RootRefC != nullptr && RootRefC->Mobility == EComponentMobility::Movable)
 		{
-			TSharedPtr<FSavedObjectInfo> ObjectSpawnInfo = MakeShareable<FSavedObjectInfo>(new FSavedObjectInfo(FoundActor));
+			FSavedObjectInfo* ObjectSpawnInfo = new FSavedObjectInfo();
+			ObjectSpawnInfo->ActorName = FoundActor->GetFName();
+			ObjectSpawnInfo->ActorTransform = FoundActor->GetTransform();
+			ObjectSpawnInfo->ActorClass = FoundActor->GetClass();
 			ObjectSpawnInfo->ActorData = SaveSerialization(FoundActor);
 
 			SavedState.Emplace(FoundActor->GetName(), ObjectSpawnInfo);
@@ -43,12 +51,13 @@ bool USaveState::Save(UWorld * World, const TArray<UClass*>& ClassesToSave)
 
 bool USaveState::Load(UWorld * World)
 {
-	TMap<FString, TSharedPtr<FSavedObjectInfo>> CopiedMap = SavedState;
-	for (AActor* FoundActor : GetSavableActorsOfClass(World, SavedClasses))
+	TMap<FString, FSavedObjectInfo*> CopiedMap = SavedState;
+	TArray<AActor*> ActorArray = GetSavableActorsOfClass(World, SavedClasses);
+	for (AActor* FoundActor : ActorArray)
 	{
 		if (SavedState.Find(FoundActor->GetName()))
 		{
-			TSharedPtr<FSavedObjectInfo> SavedInfo =  
+			FSavedObjectInfo* SavedInfo =  
 				*SavedState.Find(FoundActor->GetName());
 			if (SavedInfo)
 			{
@@ -68,13 +77,13 @@ bool USaveState::Load(UWorld * World)
 	}
 	
 	// Create UObjects
-	TArray<TSharedPtr<FSavedObjectInfo>> LoadObjectRecords = 
-		TArray<TSharedPtr<FSavedObjectInfo>>();
+	TArray<FSavedObjectInfo*> LoadObjectRecords = 
+		TArray<FSavedObjectInfo*>();
 
 	CopiedMap.GenerateValueArray(LoadObjectRecords);
 	for (int i = 0; LoadObjectRecords.IsValidIndex(i); i++)
 	{
-		const TSharedPtr<FSavedObjectInfo> ObjectRecord = LoadObjectRecords[i];
+		FSavedObjectInfo* ObjectRecord = LoadObjectRecords[i];
 
 		FActorSpawnParameters SpawnParameters;
 		SpawnParameters.Name = ObjectRecord->ActorName;
@@ -90,45 +99,49 @@ bool USaveState::Load(UWorld * World)
 	return true;
 }
 
-TArray<uint8> USaveState::SerializeState(uint8& OutSavedItemAmount) const
+TArray<uint8> USaveState::SerializeState(int& OutSavedItemAmount) const
 {
 	TArray<uint8> OutputSerialization = {};
 	TArray<FString> ObjectNameArray = {};
-	TArray<TSharedPtr<FSavedObjectInfo>> ObjectInfoArray = {};
+	TArray<FSavedObjectInfo*> ObjectInfoArray = {};
 	
 	FMemoryWriter MemoryWriter(OutputSerialization, true);
-	// FArchive Archive(MemoryWriter, true)
+	FObjectAndNameAsStringProxyArchive Archive(MemoryWriter, true);
 	
 	SavedState.GenerateKeyArray(ObjectNameArray);
 	SavedState.GenerateValueArray(ObjectInfoArray);
 
 	for (OutSavedItemAmount = 0; OutSavedItemAmount < SavedState.Num(); OutSavedItemAmount++)
 	{
-		MemoryWriter << ObjectNameArray[OutSavedItemAmount];
-		MemoryWriter << ObjectInfoArray[OutSavedItemAmount];
+		// Archive << ObjectNameArray[OutSavedItemAmount];
+		Archive << ObjectInfoArray[OutSavedItemAmount];
 	}
 
 	return OutputSerialization;
 }
 
-void USaveState::ApplySerializeOnState(const TArray<uint8> SerializedState, const uint8& InSavedItemAmount)
+void USaveState::ApplySerializeOnState(const TArray<uint8> SerializedState, const int& InSavedItemAmount)
 {
-	// TODO: Find a method
 	TArray<FString> ObjectNameArray = {};
-	TArray<TSharedPtr<FSavedObjectInfo>> ObjectInfoArray = {};
+	TArray<FSavedObjectInfo*> ObjectInfoArray = {};
 	
 	FMemoryReader MemoryReader(SerializedState, true);
-	SavedState.Empty();
+	FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
+	if (SavedState.Num() > 0)
+	{
+		// Something is working right...
+		ensure(false);
+		SavedState.Empty();
+	}
 
-	for (uint8 Counter = 0; InSavedItemAmount > Counter; Counter++)
+	for (int Counter = 0; InSavedItemAmount > Counter; Counter++)
 	{
 		FString ObjectName = FString();
-		TSharedPtr<FSavedObjectInfo> ObjectData = TSharedPtr<FSavedObjectInfo>();
+		FSavedObjectInfo* ObjectData = new FSavedObjectInfo();
 		
-		MemoryReader << ObjectName;
-		ObjectNameArray.Add(ObjectName);
-		MemoryReader << ObjectData;
-		ObjectInfoArray.Add(ObjectData);
+		// Archive << ObjectName;
+		Archive << ObjectData;
+		ObjectName = ObjectData->ActorName.ToString();
 
 		UE_LOG(LogTemp, Warning, TEXT("Adding %s"), *ObjectName);
 
@@ -187,4 +200,9 @@ void USaveState::ApplySerializationActor(UPARAM(ref) TArray<uint8>& ObjectRecord
 		CompToLoad->Serialize(Archive);
 	}
 	// Components End
+}
+
+TArray<UClass*> USaveState::GetSavedClasses()
+{
+	return SavedClasses;
 }

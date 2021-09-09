@@ -7,11 +7,13 @@
 #include "USaveState.h"
 #include "AStateSaveObject.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSaveThisState, FString, SaveFileName, FString, SaveFilePath);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLoadThisState, FString, LoadFileName, FString, SaveFilePath);
+
 UCLASS()
 class USTATESAVEPLUGIN_API AStateSaveObject : public AActor
 {
 	GENERATED_BODY()
-// Variables
 public:
 	UPROPERTY(EditAnywhere)
 	bool bDebug = false;
@@ -21,29 +23,30 @@ public:
 	bool bLoad = false;
 
 	UPROPERTY(EditAnywhere)
-	TArray<UClass*> ClassesToSave;
+	TArray<TSubclassOf<AActor>> ClassesToSave;
 
 	AStateSaveObject();
 
 	virtual void Tick(float DeltaTime) override;
 
-	bool SaveState(const FString FileName, const FString FilePath);
-	bool LoadState(const FString FileName, const FString FilePath);
+	UFUNCTION()
+	void SaveState(FString FileName,FString FilePath);
+	
+	UFUNCTION()
+	void LoadState(FString FileName,FString FilePath);
+
+	UFUNCTION()
+	TArray<FString> ListAllSaveFilesAtLocation() const;
 
 protected:
 	virtual void BeginPlay() override;
+	FSaveThisState SaveDelegate;
+	FLoadThisState LoadDelegate;
 
 private:
-	const FString SaveFilePath;
-	TSharedPtr<USaveState> SavedState;
-	
-	/**
-	 * This Function will be called to work as a middleman between itself
-	 * and SaveStates who then track what needs to be deleted once the need
-	 * calls for it.
-	 * 
-	 * @param InActor The Spawned Actor in the World
-	 */
-	UFUNCTION()
-	void SpawnHandler(AActor* InActor);
+	FString SaveFilePath = FPaths::ProjectSavedDir() + "UStateSavePlugin/";
+	UPROPERTY(EditAnywhere)
+	FString SaveSlotName = "Foobar";
+	USaveState* SavedState;
+	TArray<FString> FilesInFolder = TArray<FString>();
 };

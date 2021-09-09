@@ -37,7 +37,7 @@ public:
 		ActorTransform = InputActor->GetActorTransform();
 	}
 
-	friend FORCEINLINE FArchive& operator<<(FArchive &Ar, TSharedPtr<FSavedObjectInfo> SavedObjectInfo)
+	friend FORCEINLINE FArchive& operator<<(FArchive &Ar, FSavedObjectInfo* SavedObjectInfo)
 	{
 		Ar << SavedObjectInfo->ActorClass;
 		Ar << SavedObjectInfo->ActorName;
@@ -55,10 +55,10 @@ class USTATESAVEPLUGIN_API USaveState : public UObject
 	GENERATED_BODY()
 
 public:
-	TMap<FString, TSharedPtr<FSavedObjectInfo>> SavedState;
+	TMap<FString, FSavedObjectInfo*> SavedState = TMap<FString, FSavedObjectInfo*>();
 
 	USaveState();
-	bool Save(UWorld* World, const TArray<UClass*>& ToSave);
+	bool Save(UWorld* World, const TArray<TSubclassOf<AActor>>& ToSave);
 	bool Load(UWorld* World);
 
 	/**
@@ -67,7 +67,7 @@ public:
 	 * @param OutSavedItemAmount An reference to an uint8 on which we're to track how many items we've saved.
 	 * @return The serialized data of this SaveState.
 	 */
-	TArray<uint8> SerializeState(uint8& OutSavedItemAmount) const;
+	TArray<uint8> SerializeState(int& OutSavedItemAmount) const;
 
 	/**
 	 * Function intended to reapply previously serialized data back to be used.
@@ -75,8 +75,10 @@ public:
 	 * @param SerializedState Data which has been created using Serialize.
 	 * @param InSavedItemAmount Amount of Items which has been saved before.
 	 */
-	void ApplySerializeOnState(const TArray<uint8> SerializedState, const uint8& InSavedItemAmount);
-	
+	void ApplySerializeOnState(const TArray<uint8> SerializedState, const int& InSavedItemAmount);
+
+	TArray<UClass*> GetSavedClasses();
+
 private:
 	TArray<UClass*> SavedClasses;
 
