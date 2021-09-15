@@ -1,8 +1,10 @@
 #include "AStateSaveObject.h"
 
-#include "FileManagerGeneric.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
+
+#include "FileManagerGeneric.h"
+#include "ROSBridgeGameInstance.h"
 #include "Serialization/BufferArchive.h"
 #include "Serialization/MemoryReader.h"
 #include "USaveState.h"
@@ -19,6 +21,17 @@ void AStateSaveObject::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (SaveService->bCalled)
+	{
+		SaveService->bCalled = false;
+		SaveDelegate.Broadcast();
+	}
+	if (LoadService->bCalled)
+	{
+		LoadService->bCalled = false;
+		LoadDelegate.Broadcast();
+	}
+		
 	// Debug Section
 	if (!bDebug)
 		return;
@@ -42,9 +55,19 @@ void AStateSaveObject::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Make ROS Services
+	UROSBridgeGameInstance* ActiveGameInstance = Cast<UROSBridgeGameInstance>(GetGameInstance());
+	
+	SaveService = MakeShareable<FROSSaveStateLevel>(new FROSSaveStateLevel(SaveServiceTopic, TEXT("std_srvs/Trigger")));
+	LoadService = MakeShareable<FROSLoadStateLevel>(new FROSLoadStateLevel(LoadServiceTopic, TEXT("std_srvs/Trigger")));
+
+	ActiveGameInstance->ROSHandler->AddServiceServer(SaveService);
+	ActiveGameInstance->ROSHandler->AddServiceServer(LoadService);
+	ActiveGameInstance->ROSHandler->Process();
+	
 	// Bind the Dynamic Delegate in Runtime
-	SaveDelegate.AddDynamic(this, &AStateSaveObject::SaveState);
-	LoadDelegate.AddDynamic(this, &AStateSaveObject::LoadState);
+	SaveDelegate.AddDynamic(this, &AStateSaveObject::CallSave);
+	LoadDelegate.AddDynamic(this, &AStateSaveObject::CallLoad);
 	ListDelegate.BindDynamic(this, &AStateSaveObject::ListAllSaveFilesAtLocation);
 }
 
@@ -119,3 +142,14 @@ TArray<FString> AStateSaveObject::ListAllSaveFilesAtLocation()
 
 	return OutputArray;
 }
+
+void AStateSaveObject::CallSave()
+{
+	SaveState(SaveSlotName, SaveFilePath);
+}
+
+void AStateSaveObject::CallLoad()
+{
+	LoadState(SaveSlotName, SaveFilePath);
+}
+

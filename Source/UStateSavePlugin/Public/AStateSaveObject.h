@@ -3,12 +3,16 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "FROSLoadStateLevel.h"
+#include "FROSSaveStateLevel.h"
 #include "GameFramework/Actor.h"
 #include "USaveState.h"
 #include "AStateSaveObject.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSaveThisState, FString, SaveFileName, FString, SaveFilePath);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLoadThisState, FString, LoadFileName, FString, SaveFilePath);
+// DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSaveThisState, FString, SaveFileName, FString, SaveFilePath);
+// DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLoadThisState, FString, LoadFileName, FString, SaveFilePath);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSaveThisState);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLoadThisState);
 DECLARE_DYNAMIC_DELEGATE_RetVal(TArray<FString>, FListAllFilesInFolder);
 
 UCLASS()
@@ -22,6 +26,15 @@ public:
 	bool bSave = false;
 	UPROPERTY(EditAnywhere)
 	bool bLoad = false;
+	FSaveThisState SaveDelegate;
+	FLoadThisState LoadDelegate;
+
+	// ROS Services
+	TSharedPtr<FROSSaveStateLevel> SaveService;
+	TSharedPtr<FROSLoadStateLevel> LoadService;
+
+	const FString SaveServiceTopic = FString("/unreal_save_system/save");
+	const FString LoadServiceTopic = FString("/unreal_save_system/load");
 
 	UPROPERTY(EditAnywhere)
 	TArray<TSubclassOf<AActor>> ClassesToSave;
@@ -31,8 +44,12 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	UFUNCTION()
-	void SaveState(FString FileName,FString FilePath);
+	void CallSave();
+	UFUNCTION()
+	void CallLoad();
 	
+	UFUNCTION()
+	void SaveState(FString FileName,FString FilePath);
 	UFUNCTION()
 	void LoadState(FString FileName,FString FilePath);
 
@@ -41,8 +58,6 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-	FSaveThisState SaveDelegate;
-	FLoadThisState LoadDelegate;
 	FListAllFilesInFolder ListDelegate;
 
 private:
