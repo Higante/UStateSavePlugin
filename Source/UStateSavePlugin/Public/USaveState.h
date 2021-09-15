@@ -2,79 +2,114 @@
 
 #include "CoreMinimal.h"
 #include "Containers/Map.h"
-#include "Engine/World.h"
-#include "GameFramework/Actor.h"
-#include "USaveStateInterface.h"
+#include "Engine/DemoNetDriver.h"
+#include "Engine/StaticMesh.h"
 #include "USaveState.generated.h"
 
-// Struct to help save Objects.
-USTRUCT(BlueprintType)
+/**
+ * Custom Struct holding Informations and the Bytes to recreate an Actors using
+ * the Serialize Method provided by Unreal Engine 4.
+ */
+USTRUCT()
 struct FSavedObjectInfo
 {
-	GENERATED_BODY()
+	GENERATED_USTRUCT_BODY()
 
 public:
-	// Optional Variables
+	FName ActorName;
+	FTransform ActorTransform;
+	TArray<uint8> ActorData;
 	UClass* ActorClass;
-
-	FVector ActorLocation;
-	FRotator ActorRotation;
-	TArray<FName> Tags;
 
 	FSavedObjectInfo()
 	{
-		ActorLocation = FVector();
-		ActorRotation = FRotator();
-		Tags.Init(FName(), 0);
+		ActorClass = AActor::StaticClass();
+		ActorData = TArray<uint8>();
+		ActorName = FName();
+		ActorTransform = FTransform();
 	}
 
-	FSavedObjectInfo(AActor* InputActor)
+	FSavedObjectInfo(const AActor* InputActor)
 	{
 		ActorClass = InputActor->GetClass();
+		ActorData = TArray<uint8>();
+		ActorName = InputActor->GetFName();
+		ActorTransform = InputActor->GetActorTransform();
+	}
 
-		ActorLocation = InputActor->GetActorLocation();
-		ActorRotation = InputActor->GetActorRotation();
-		Tags = InputActor->Tags;
+	friend FORCEINLINE FArchive& operator<<(FArchive &Ar, FSavedObjectInfo* SavedObjectInfo)
+	{
+		Ar << SavedObjectInfo->ActorClass;
+		Ar << SavedObjectInfo->ActorName;
+		Ar << SavedObjectInfo->ActorTransform;
+		Ar << SavedObjectInfo->ActorData;
+		
+		return Ar;
 	}
 };
 
+
 UCLASS()
-class USTATESAVEPLUGIN_API USaveState : public UObject, public ISaveStateInterface
+class USTATESAVEPLUGIN_API USaveState : public UObject
 {
 	GENERATED_BODY()
 
 public:
+	TMap<FString, FSavedObjectInfo*> SavedState = TMap<FString, FSavedObjectInfo*>();
+
 	USaveState();
-
-	TArray<UClass*> SavedClasses;
-	TMap<FString, FSavedObjectInfo> SavedState;
-	
-	// Save Objects etc.
-	TArray<AActor*> ObjectsToDelete;
-	TArray<AActor*> ObjectsToSpawn;
-
-	TMap<FString, FSavedObjectInfo> GetSavedState();
-
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	void ClearContents();
-	void ClearContents_Implementation() override;
-
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	bool Save(UWorld* World, TArray<UClass*>& ToSave);
-	bool Save_Implementation(UWorld* World, TArray<UClass*>& ToSave) override;
-
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
+	bool Save(UWorld* World, const TArray<TSubclassOf<AActor>>& ToSave);
 	bool Load(UWorld* World);
-	bool Load_Implementation(UWorld* World) override;
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	void OnSpawnChange(AActor* InActor);
-	void OnSpawnChange_Implementation(AActor* InActor) override;
+	/**
+	 * Function to Serialize the SaveState. To be used along to bring it into an USaveGame
+	 *
+	 * @param OutSavedItemAmount An reference to an uint8 on which we're to track how many items we've saved.
+	 * @return The serialized data of this SaveState.
+	 */
+	TArray<uint8> SerializeState(int& OutSavedItemAmount) const;
 
-	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "SaveState")
-	void OnDeleteChange(AActor* InActor);
-	void OnDeleteChange_Implementation(AActor* InActor) override;
+	/**
+	 * Function intended to reapply previously serialized data back to be used.
+	 *
+	 * @param SerializedState Data which has been created using Serialize.
+	 * @param InSavedItemAmount Amount of Items which has been saved before.
+	 */
+	void ApplySerializeOnState(const TArray<uint8> SerializedState, const int& InSavedItemAmount);
+
+	TArray<UClass*> GetSavedClasses();
 
 private:
-	AActor* CreateSpawningActor(AActor* InActor);
+	TArray<UClass*> SavedClasses;
+
+	/**
+	 * Auxiliary Function. Clears the SaveStates Internal Variables.
+	 */
+	void ClearContents();
+
+	/**
+	 * Auxiliary Function. Helps getting all the relevant Actors in a InputWorld into one TArray. 
+	 * 
+	 * @param InWorld The Reference to the GameWorld for which the SaveState should check for
+	 * @param TRefClasses An Array of Classes which are looked for.
+	 * @return Unsorted TArray of Actors which have been found.
+	 */
+	UFUNCTION()
+	static TArray<AActor*> GetSavableActorsOfClass(UWorld* InWorld, TArray<UClass*> TRefClasses);
+
+	/**
+	 * Auxiliary Function, intended to save given Actor in a format which can be restored later on.
+	 *
+	 * @param SaveObject Pointer to an Actor which is not Null.
+	 * @return The Serialized Array of Bytes representing said Actor, able to be restored with Serialize.
+	 */
+	static TArray<uint8> SaveSerialization(AActor* SaveObject);
+
+	/**
+	 * Auxiliary Function. Helps, using Serialize, loading Objects which have been deleted.
+	 * 
+	 * @param ObjectRecord Reference to an Array holding the serialized Actor Data.
+	 * @param ObjectToApplyOn Pointer to an Actor on which to apply given serialized data.
+	 */
+	static void ApplySerializationActor(TArray<uint8>& ObjectRecord, AActor* ObjectToApplyOn);
 };

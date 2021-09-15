@@ -1,146 +1,226 @@
 #include "USaveState.h"
+
+#include "FileManagerGeneric.h"
 #include "Components/PrimitiveComponent.h"
+#include "Engine/StaticMeshActor.h"
+#include "Engine/World.h"
+#include "GameFramework/Actor.h"
+#include "GameFramework/SaveGame.h"
 #include "Kismet/GameplayStatics.h"
+#include "Serialization/MemoryReader.h"
+#include "Serialization/MemoryWriter.h"
+#include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 
 USaveState::USaveState()
 {
-	SavedClasses = {};
-	SavedState = TMap<FString, FSavedObjectInfo>();
-
-	ObjectsToDelete = {};
-	ObjectsToSpawn = {};
+	SavedClasses = TArray<UClass*>();
 }
 
-TMap<FString, FSavedObjectInfo> USaveState::GetSavedState()
+void USaveState::ClearContents()
 {
-	return SavedState;
+	SavedClasses.Empty();
+	SavedState.Empty();
 }
 
-void USaveState::ClearContents_Implementation()
+bool USaveState::Save(UWorld * World, const TArray<TSubclassOf<AActor>>& ClassesToSave)
 {
-	SavedClasses = {};
-	SavedState = TMap<FString, FSavedObjectInfo>();
+	ClearContents();
 
-	ObjectsToDelete = {};
-	ObjectsToSpawn = {};
-}
-
-bool USaveState::Save_Implementation(UWorld * World, TArray<UClass*>& ToSave)
-{
-	// Reset To Be Saved/Deleted
-	ObjectsToDelete = {};
-	ObjectsToSpawn = {};
-
-	// Save Classes saved for later used
-	SavedClasses = ToSave;
-
-	for (UClass* RefClass : ToSave)
+	for (TSubclassOf<AActor> ClassToSave : ClassesToSave)
 	{
-		TArray<AActor*> OutArray = TArray<AActor*>();
-		UGameplayStatics::GetAllActorsOfClass(World, RefClass, OutArray);
-
-		// Alternative?
-		for (AActor* FoundActor : OutArray)
+		SavedClasses.Add(ClassToSave.Get());
+	}
+	
+	TArray<AActor*> ActorsToSave = GetSavableActorsOfClass(World, SavedClasses);
+	for (AActor* FoundActor : ActorsToSave)
+	{
+		UPrimitiveComponent* RootRefC = Cast<UPrimitiveComponent>(FoundActor->GetRootComponent());
+		if (RootRefC != nullptr && RootRefC->Mobility == EComponentMobility::Movable)
 		{
-			if (Cast<UPrimitiveComponent>(FoundActor->GetRootComponent()) != nullptr && Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->Mobility == EComponentMobility::Movable)
-			{
-				SavedState.Add(FoundActor->GetName(), FSavedObjectInfo(FoundActor));
-			}
-			else if (Cast<USceneComponent>(FoundActor->GetRootComponent()) != nullptr && Cast<USceneComponent>(FoundActor->GetRootComponent())->Mobility == EComponentMobility::Movable)
-			{
-				SavedState.Add(FoundActor->GetName(), FSavedObjectInfo(FoundActor));
-			}
+			FSavedObjectInfo* ObjectSpawnInfo = new FSavedObjectInfo();
+			ObjectSpawnInfo->ActorName = FoundActor->GetFName();
+			ObjectSpawnInfo->ActorTransform = FoundActor->GetTransform();
+			ObjectSpawnInfo->ActorClass = FoundActor->GetClass();
+			ObjectSpawnInfo->ActorData = SaveSerialization(FoundActor);
+
+			SavedState.Emplace(FoundActor->GetName(), ObjectSpawnInfo);
 		}
 	}
-
 	return true;
 }
 
-bool USaveState::Load_Implementation(UWorld * World)
+bool USaveState::Load(UWorld * World)
 {
-	TMap<FString, FSavedObjectInfo> CurrentSavedState = GetSavedState();
+	TMap<FString, FSavedObjectInfo*> CopiedMap = SavedState;
+	TArray<AActor*> ActorsToDelete = TArray<AActor*>();
+	TArray<AActor*> ActorArray = GetSavableActorsOfClass(World, SavedClasses);
 
-	// Deal with the Two Arrays needing spawning/deleting
-	for (AActor* ToDelete : ObjectsToDelete)
+	// Move Objects if they still reside within the Level.
+	for (AActor* FoundActor : ActorArray)
 	{
-		ToDelete->Destroy();
-	}
-
-	for (int i = 0; i < ObjectsToSpawn.Num(); i++)
-	{
-		CreateSpawningActor(ObjectsToSpawn[i]);
-	}
-
-	// Clear both Arrays
-	ObjectsToDelete = {};
-	ObjectsToSpawn = {};
-
-	for (UClass* RefClass : SavedClasses)
-	{
-		// Get the Actors of the Class within the World
-		TArray<AActor*> OutActors = TArray<AActor*>();
-		UGameplayStatics::GetAllActorsOfClass(World, RefClass, OutActors);
-
-		for (AActor* FoundActor : OutActors)
+		if (SavedState.Find(FoundActor->GetName()))
 		{
-			if (CurrentSavedState.Find(FoundActor->GetName()) != nullptr)
+			FSavedObjectInfo* SavedInfo =  
+				*SavedState.Find(FoundActor->GetName());
+			if (SavedInfo)
 			{
-				FSavedObjectInfo* SavedInfo = CurrentSavedState.Find(FoundActor->GetName());
+				FoundActor->SetActorTransform(SavedInfo->ActorTransform);
 
-				// Set Saved Infos
-				FoundActor->SetActorLocation(SavedInfo->ActorLocation);
-				FoundActor->SetActorRotation(SavedInfo->ActorRotation);
-				FoundActor->Tags = SavedInfo->Tags;
-
-				// Velocity to 0 (Check if it may throw an error)
-				if (Cast<UPrimitiveComponent>(FoundActor->GetRootComponent()) != nullptr)
+				// Set Velocity etc. to zero.
+				UPrimitiveComponent* RefRootC = 
+					Cast<UPrimitiveComponent>(FoundActor->GetRootComponent());
+				if (RefRootC != nullptr)
 				{
-					Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsLinearVelocity(FVector());
-					Cast<UPrimitiveComponent>(FoundActor->GetRootComponent())->SetPhysicsAngularVelocityInDegrees(FVector());
+					RefRootC->SetPhysicsLinearVelocity(FVector());
+					RefRootC->SetPhysicsAngularVelocityInDegrees(FVector());
 				}
-				else if (Cast<USceneComponent>(FoundActor->GetRootComponent()) != nullptr)
-				{
-					Cast<USceneComponent>(FoundActor->GetRootComponent())->ComponentVelocity = FVector();
-				}
+				// Remove Object which have bene found from List.
+				CopiedMap.Remove(FoundActor->GetName());
 			}
+		}
+		else
+		{
+			if (EComponentMobility::Static != FoundActor->GetRootComponent()->Mobility)
+				ActorsToDelete.Add(FoundActor);
 		}
 	}
 
+	// Remove Unlisted Objects
+	for (AActor* ActorToDelete : ActorsToDelete)
+	{
+		UE_LOG(LogTemp, Error, TEXT("DELETING %s"), *ActorToDelete->GetName());
+		ActorToDelete->Destroy();
+	}
+	
+	// Respawn Objects
+	TArray<FSavedObjectInfo*> LoadObjectRecords = TArray<FSavedObjectInfo*>();
+
+	CopiedMap.GenerateValueArray(LoadObjectRecords);
+	for (int i = 0; LoadObjectRecords.IsValidIndex(i); i++)
+	{
+		FSavedObjectInfo* ObjectRecord = LoadObjectRecords[i];
+
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.Name = ObjectRecord->ActorName;
+		SpawnParameters.OverrideLevel = World->PersistentLevel;
+		FTransform TempTransform = FTransform();
+		AActor* NewActor = World->SpawnActor(ObjectRecord->ActorClass, 
+			&TempTransform, SpawnParameters);
+
+		ApplySerializationActor(ObjectRecord->ActorData, NewActor);
+		NewActor->SetActorTransform(ObjectRecord->ActorTransform);
+		NewActor->UpdateComponentTransforms();
+	}
+	
 	return true;
 }
 
-void USaveState::OnSpawnChange_Implementation(AActor * InActor)
+TArray<uint8> USaveState::SerializeState(int& OutSavedItemAmount) const
 {
-	if (ObjectsToSpawn.Contains(InActor))
+	TArray<uint8> OutputSerialization = {};
+	TArray<FString> ObjectNameArray = {};
+	TArray<FSavedObjectInfo*> ObjectInfoArray = {};
+	
+	FMemoryWriter MemoryWriter(OutputSerialization, true);
+	FObjectAndNameAsStringProxyArchive Archive(MemoryWriter, true);
+	
+	SavedState.GenerateKeyArray(ObjectNameArray);
+	SavedState.GenerateValueArray(ObjectInfoArray);
+
+	for (OutSavedItemAmount = 0; OutSavedItemAmount < SavedState.Num(); OutSavedItemAmount++)
 	{
-		ObjectsToSpawn.Remove(InActor);
-		return;
+		// Archive << ObjectNameArray[OutSavedItemAmount];
+		Archive << ObjectInfoArray[OutSavedItemAmount];
 	}
 
-	ObjectsToDelete.Add(InActor);
+	return OutputSerialization;
 }
 
-void USaveState::OnDeleteChange_Implementation(AActor * InActor)
+void USaveState::ApplySerializeOnState(const TArray<uint8> SerializedState, const int& InSavedItemAmount)
 {
-	/*
-	if (ObjectsToDelete.Contains(InActor))
+	TArray<FString> ObjectNameArray = {};
+	TArray<FSavedObjectInfo*> ObjectInfoArray = {};
+	
+	FMemoryReader MemoryReader(SerializedState, true);
+	FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
+	if (SavedState.Num() > 0)
 	{
-		ObjectsToDelete.Remove(InActor);
-		return;
+		// SavedState was not cleaned ere using it again.
+		ensure(false);
+		SavedState.Empty();
 	}
-	*/
 
-	ObjectsToSpawn.Add(InActor);
+	for (int Counter = 0; InSavedItemAmount > Counter; Counter++)
+	{
+		FString ObjectName = FString();
+		FSavedObjectInfo* ObjectData = new FSavedObjectInfo();
+		
+		// Archive << ObjectName;
+		Archive << ObjectData;
+		ObjectName = ObjectData->ActorName.ToString();
+
+		if (!SavedClasses.Contains(ObjectData->ActorClass))
+			SavedClasses.Add(ObjectData->ActorClass);
+		UE_LOG(LogTemp, Warning, TEXT("Adding %s"), *ObjectName);
+
+		SavedState.Add(ObjectName, ObjectData);
+	}
 }
 
-AActor * USaveState::CreateSpawningActor(AActor* InActor)
+
+TArray<AActor*> USaveState::GetSavableActorsOfClass(UWorld* InWorld, TArray<UClass*> TRefClasses)
 {
-	FActorSpawnParameters Params = FActorSpawnParameters();
-	Params.Name = FName(*InActor->GetName());
+	check(InWorld);
+	TArray<AActor*> OutArray = TArray<AActor*>();
+	
+	for (UClass* RefClass : TRefClasses)
+	{
+		TArray<AActor*> AddToArray = TArray<AActor*>();
+		UGameplayStatics::GetAllActorsOfClass(InWorld, RefClass, AddToArray);
+		OutArray.Append(AddToArray);
+	}
 
-	FTransform InTransform = FTransform(InActor->GetActorRotation(), InActor->GetActorLocation());
+	return OutArray;
+}
 
-	AActor* SpawningActor = GetWorld()->SpawnActor(InActor->GetClass(), &InTransform, Params);
+TArray<uint8> USaveState::SaveSerialization(AActor* SaveObject)
+{
+	TArray<uint8> OutputData;
+	FMemoryWriter MemoryWriter(OutputData, true);
+	FObjectAndNameAsStringProxyArchive Archive(MemoryWriter, true);
+	SaveObject->Serialize(Archive);
 
-	return SpawningActor;
+	// Components Begin
+	TArray<UActorComponent*> ChildComponents;
+	SaveObject->GetComponents(ChildComponents);
+
+	for (UActorComponent* CompToSave : ChildComponents)
+	{
+		CompToSave->Serialize(Archive);
+	}
+	// Components End
+
+	return OutputData;
+}
+
+void USaveState::ApplySerializationActor(UPARAM(ref) TArray<uint8>& ObjectRecord, AActor* ObjectToApplyOn)
+{
+	FMemoryReader MemoryReader(ObjectRecord, true);
+	FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
+	ObjectToApplyOn->Serialize(Archive);
+
+	// Components Begin
+	TArray<UActorComponent*> ChildComponents;
+	ObjectToApplyOn->GetComponents(ChildComponents);
+
+	for (UActorComponent* CompToLoad : ChildComponents)
+	{
+		CompToLoad->Serialize(Archive);
+	}
+	// Components End
+}
+
+TArray<UClass*> USaveState::GetSavedClasses()
+{
+	return SavedClasses;
 }
