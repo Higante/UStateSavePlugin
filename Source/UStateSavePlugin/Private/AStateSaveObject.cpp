@@ -21,17 +21,6 @@ void AStateSaveObject::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (SaveService->bCalled)
-	{
-		SaveService->bCalled = false;
-		SaveDelegate.Broadcast();
-	}
-	if (LoadService->bCalled)
-	{
-		LoadService->bCalled = false;
-		LoadDelegate.Broadcast();
-	}
-		
 	// Debug Section
 	if (!bDebug)
 		return;
@@ -64,10 +53,10 @@ void AStateSaveObject::BeginPlay()
 	ActiveGameInstance->ROSHandler->AddServiceServer(SaveService);
 	ActiveGameInstance->ROSHandler->AddServiceServer(LoadService);
 	ActiveGameInstance->ROSHandler->Process();
-	
-	// Bind the Dynamic Delegate in Runtime
-	SaveDelegate.AddDynamic(this, &AStateSaveObject::CallSave);
-	LoadDelegate.AddDynamic(this, &AStateSaveObject::CallLoad);
+
+	// Bind Delegates
+	SaveService->OnRosCallsSave.BindUObject(this, &AStateSaveObject::CallSave);
+	LoadService->OnRosCallsLoad.BindUObject(this, &AStateSaveObject::CallLoad);
 	ListDelegate.BindDynamic(this, &AStateSaveObject::ListAllSaveFilesAtLocation);
 }
 

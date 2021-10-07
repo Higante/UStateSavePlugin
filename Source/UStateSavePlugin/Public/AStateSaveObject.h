@@ -9,10 +9,6 @@
 #include "USaveState.h"
 #include "AStateSaveObject.generated.h"
 
-// DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSaveThisState, FString, SaveFileName, FString, SaveFilePath);
-// DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FLoadThisState, FString, LoadFileName, FString, SaveFilePath);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSaveThisState);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FLoadThisState);
 DECLARE_DYNAMIC_DELEGATE_RetVal(TArray<FString>, FListAllFilesInFolder);
 
 UCLASS()
@@ -26,8 +22,6 @@ public:
 	bool bSave = false;
 	UPROPERTY(EditAnywhere)
 	bool bLoad = false;
-	FSaveThisState SaveDelegate;
-	FLoadThisState LoadDelegate;
 
 	// ROS Services
 	TSharedPtr<FROSSaveStateLevel> SaveService;

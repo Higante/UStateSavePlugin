@@ -6,7 +6,7 @@
 class FROSSaveStateLevel final : public FROSBridgeSrvServer
 {
 public:
-	bool bCalled = false;
+	FSimpleDelegate OnRosCallsSave;
 	FROSSaveStateLevel(const FString InName, FString InType) : FROSBridgeSrvServer(InName, InType) {}
 
 	TSharedPtr<FROSBridgeSrv::SrvRequest> FromJson(TSharedPtr<FJsonObject> JsonObject) const override
@@ -19,7 +19,7 @@ public:
 	TSharedPtr<FROSBridgeSrv::SrvResponse> Callback(TSharedPtr<FROSBridgeSrv::SrvRequest> InRequest) override
 	{
 		TSharedPtr<std_srvs::Trigger::Request> Request = StaticCastSharedPtr<std_srvs::Trigger::Request>(InRequest);
-		bCalled = true;
+		OnRosCallsSave.ExecuteIfBound();
 		return MakeShareable<FROSBridgeSrv::SrvResponse>(new std_srvs::Trigger::Response(true, FString("Saved State!")));
 	}
 };
