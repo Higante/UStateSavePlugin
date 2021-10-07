@@ -7,12 +7,10 @@
 #include "FROSSaveStateLevel.h"
 #include "GameFramework/Actor.h"
 #include "USaveState.h"
-#include "AStateSaveObject.generated.h"
-
-DECLARE_DYNAMIC_DELEGATE_RetVal(TArray<FString>, FListAllFilesInFolder);
+#include "ASaveStateActor.generated.h"
 
 UCLASS()
-class USTATESAVEPLUGIN_API AStateSaveObject : public AActor
+class USTATESAVEPLUGIN_API ASaveStateActor final : public AActor
 {
 	GENERATED_BODY()
 public:
@@ -27,37 +25,36 @@ public:
 	TSharedPtr<FROSSaveStateLevel> SaveService;
 	TSharedPtr<FROSLoadStateLevel> LoadService;
 
-	const FString SaveServiceTopic = FString("/unreal_save_system/save");
-	const FString LoadServiceTopic = FString("/unreal_save_system/load");
+	const FString SaveServiceTopic = FString("/unreal_save_system/ue4_ros_save");
+	const FString LoadServiceTopic = FString("/unreal_save_system/ue4_ros_load");
 
 	UPROPERTY(EditAnywhere)
 	TArray<TSubclassOf<AActor>> ClassesToSave;
 
-	AStateSaveObject();
+	ASaveStateActor();
 
 	virtual void Tick(float DeltaTime) override;
 
 	UFUNCTION()
-	void CallSave();
+	void RosCallSave();
 	UFUNCTION()
-	void CallLoad();
+	void RosCallLoad();
+
+	UFUNCTION()
+	TArray<FString> ListAllSaveFilesAtLocation() const;
+
+protected:
+	virtual void BeginPlay() override;
+
+private:
+	UPROPERTY(EditAnywhere)
+	FString SaveSlotName = "Foobar";
+	const FString SaveFilePath = FPaths::ProjectSavedDir() + "UStateSavePlugin/";
+	
+	USaveState* SavedState;
 	
 	UFUNCTION()
 	void SaveState(FString FileName,FString FilePath);
 	UFUNCTION()
 	void LoadState(FString FileName,FString FilePath);
-
-	UFUNCTION()
-	TArray<FString> ListAllSaveFilesAtLocation();
-
-protected:
-	virtual void BeginPlay() override;
-	FListAllFilesInFolder ListDelegate;
-
-private:
-	FString SaveFilePath = FPaths::ProjectSavedDir() + "UStateSavePlugin/";
-	UPROPERTY(EditAnywhere)
-	FString SaveSlotName = "Foobar";
-	USaveState* SavedState;
-	TArray<FString> FilesInFolder = TArray<FString>();
 };

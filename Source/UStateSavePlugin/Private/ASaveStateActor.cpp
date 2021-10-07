@@ -1,15 +1,13 @@
-#include "AStateSaveObject.h"
+#include "ASaveStateActor.h"
 
-#include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMeshActor.h"
-
 #include "FileManagerGeneric.h"
 #include "ROSBridgeGameInstance.h"
 #include "Serialization/BufferArchive.h"
 #include "Serialization/MemoryReader.h"
 #include "USaveState.h"
 
-AStateSaveObject::AStateSaveObject()
+ASaveStateActor::ASaveStateActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
@@ -17,10 +15,11 @@ AStateSaveObject::AStateSaveObject()
 	ClassesToSave.Add(AStaticMeshActor::StaticClass());
 }
 
-void AStateSaveObject::Tick(float DeltaTime)
+void ASaveStateActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+#if WITH_EDITOR
 	// Debug Section
 	if (!bDebug)
 		return;
@@ -28,25 +27,27 @@ void AStateSaveObject::Tick(float DeltaTime)
 	if (bSave)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Debug: Saving Test"));
-		SaveState(SaveSlotName, SaveFilePath);
+		RosCallSave();
 		bSave = false;
 	}
 
 	if (bLoad)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Debug: Loading Test"));
-		LoadState(SaveSlotName, SaveFilePath);
+		RosCallLoad();
 		bLoad = false;
 	}
+#endif
 }
 
-void AStateSaveObject::BeginPlay()
+void ASaveStateActor::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Make ROS Services
-	UROSBridgeGameInstance* ActiveGameInstance = Cast<UROSBridgeGameInstance>(GetGameInstance());
+	// Make ROS Game Instance
+	const UROSBridgeGameInstance* ActiveGameInstance = Cast<UROSBridgeGameInstance>(GetGameInstance());
 	
+	// Add new Services to the ROSHandler
 	SaveService = MakeShareable<FROSSaveStateLevel>(new FROSSaveStateLevel(SaveServiceTopic, TEXT("std_srvs/Trigger")));
 	LoadService = MakeShareable<FROSLoadStateLevel>(new FROSLoadStateLevel(LoadServiceTopic, TEXT("std_srvs/Trigger")));
 
@@ -55,9 +56,8 @@ void AStateSaveObject::BeginPlay()
 	ActiveGameInstance->ROSHandler->Process();
 
 	// Bind Delegates
-	SaveService->OnRosCallsSave.BindUObject(this, &AStateSaveObject::CallSave);
-	LoadService->OnRosCallsLoad.BindUObject(this, &AStateSaveObject::CallLoad);
-	ListDelegate.BindDynamic(this, &AStateSaveObject::ListAllSaveFilesAtLocation);
+	SaveService->OnRosCallback.BindUObject(this, &ASaveStateActor::RosCallSave);
+	LoadService->OnRosCallback.BindUObject(this, &ASaveStateActor::RosCallLoad);
 }
 
 /**
@@ -66,11 +66,10 @@ void AStateSaveObject::BeginPlay()
  * @param FileName FString Input saying which file to save.
  * @param FilePath Optional. FString Indicating the path to the Folder holding the Savesfiles.
  */
-void AStateSaveObject::SaveState(FString FileName, FString FilePath)
+void ASaveStateActor::SaveState(FString FileName, FString FilePath)
 {
 	TArray<uint8> DataToSave = TArray<uint8>();
-	TArray<uint8> SaveGameData = TArray<uint8>();
-	int AmountOfItemsSaved = 0;
+	int32 AmountOfItemsSaved = 0;
 
 	SavedState = NewObject<USaveState>();
 	SavedState->Save(GetWorld(), ClassesToSave);
@@ -94,7 +93,7 @@ void AStateSaveObject::SaveState(FString FileName, FString FilePath)
  * @param FileName FString Input saying which file to load.
  * @param FilePath Optional. FString Indicating the path to the Folder holding the Savesfiles.
  */
-void AStateSaveObject::LoadState(FString FileName, FString FilePath)
+void ASaveStateActor::LoadState(FString FileName, FString FilePath)
 {
 	UE_LOG(LogTemp, Warning, TEXT("%s: Begin loading State!"), TEXT(__FUNCTION__));
 	SavedState = NewObject<USaveState>();
@@ -124,7 +123,7 @@ void AStateSaveObject::LoadState(FString FileName, FString FilePath)
 	UE_LOG(LogTemp, Error, TEXT("%s: No save file found compatible with this world."), TEXT(__FUNCTION__));
 }
 
-TArray<FString> AStateSaveObject::ListAllSaveFilesAtLocation()
+TArray<FString> ASaveStateActor::ListAllSaveFilesAtLocation() const
 {
 	TArray<FString> OutputArray = TArray<FString>();
 	IFileManager::Get().FindFiles(OutputArray, *SaveFilePath, *FString("sav"));
@@ -132,12 +131,18 @@ TArray<FString> AStateSaveObject::ListAllSaveFilesAtLocation()
 	return OutputArray;
 }
 
-void AStateSaveObject::CallSave()
+/**
+ * Delegate Function to be executed if ROS calls for the Level to be saved.
+ */
+void ASaveStateActor::RosCallSave()
 {
 	SaveState(SaveSlotName, SaveFilePath);
 }
 
-void AStateSaveObject::CallLoad()
+/**
+ * Delegate Function to be executed if ROS calls for the level to be saved.
+ */
+void ASaveStateActor::RosCallLoad()
 {
 	LoadState(SaveSlotName, SaveFilePath);
 }

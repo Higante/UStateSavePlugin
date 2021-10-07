@@ -1,20 +1,14 @@
 #include "USaveState.h"
 
-#include "FileManagerGeneric.h"
 #include "Components/PrimitiveComponent.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
+#include "FileManagerGeneric.h"
 #include "GameFramework/Actor.h"
-#include "GameFramework/SaveGame.h"
 #include "Kismet/GameplayStatics.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
-
-USaveState::USaveState()
-{
-	SavedClasses = TArray<UClass*>();
-}
 
 void USaveState::ClearContents()
 {
@@ -32,6 +26,7 @@ bool USaveState::Save(UWorld * World, const TArray<TSubclassOf<AActor>>& Classes
 	}
 	
 	TArray<AActor*> ActorsToSave = GetSavableActorsOfClass(World, SavedClasses);
+	// Run through each actor, checking whether or not they're movable and then save them.
 	for (AActor* FoundActor : ActorsToSave)
 	{
 		UPrimitiveComponent* RootRefC = Cast<UPrimitiveComponent>(FoundActor->GetRootComponent());
@@ -115,7 +110,7 @@ bool USaveState::Load(UWorld * World)
 	return true;
 }
 
-TArray<uint8> USaveState::SerializeState(int& OutSavedItemAmount) const
+TArray<uint8> USaveState::SerializeState(int32& OutSavedItemAmount) const
 {
 	TArray<uint8> OutputSerialization = {};
 	TArray<FString> ObjectNameArray = {};
@@ -129,7 +124,6 @@ TArray<uint8> USaveState::SerializeState(int& OutSavedItemAmount) const
 
 	for (OutSavedItemAmount = 0; OutSavedItemAmount < SavedState.Num(); OutSavedItemAmount++)
 	{
-		// Archive << ObjectNameArray[OutSavedItemAmount];
 		Archive << ObjectInfoArray[OutSavedItemAmount];
 	}
 
@@ -190,7 +184,7 @@ TArray<uint8> USaveState::SaveSerialization(AActor* SaveObject)
 	FObjectAndNameAsStringProxyArchive Archive(MemoryWriter, true);
 	SaveObject->Serialize(Archive);
 
-	// Components Begin
+	// Iterate through the Child Components and serialize them as well.
 	TArray<UActorComponent*> ChildComponents;
 	SaveObject->GetComponents(ChildComponents);
 
@@ -198,7 +192,6 @@ TArray<uint8> USaveState::SaveSerialization(AActor* SaveObject)
 	{
 		CompToSave->Serialize(Archive);
 	}
-	// Components End
 
 	return OutputData;
 }
@@ -209,7 +202,7 @@ void USaveState::ApplySerializationActor(UPARAM(ref) TArray<uint8>& ObjectRecord
 	FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
 	ObjectToApplyOn->Serialize(Archive);
 
-	// Components Begin
+	// Iterate through the Child Components and serialize them as well.
 	TArray<UActorComponent*> ChildComponents;
 	ObjectToApplyOn->GetComponents(ChildComponents);
 
@@ -217,10 +210,9 @@ void USaveState::ApplySerializationActor(UPARAM(ref) TArray<uint8>& ObjectRecord
 	{
 		CompToLoad->Serialize(Archive);
 	}
-	// Components End
 }
 
-TArray<UClass*> USaveState::GetSavedClasses()
+TArray<UClass*> USaveState::GetSavedClasses() const
 {
 	return SavedClasses;
 }

@@ -6,7 +6,7 @@
 class FROSLoadStateLevel final : public FROSBridgeSrvServer
 {
 public:
-	FSimpleDelegate OnRosCallsLoad;
+	FSimpleDelegate OnRosCallback;
 	FROSLoadStateLevel(const FString InName, FString InType) : FROSBridgeSrvServer(InName, InType) {}
 
 	TSharedPtr<FROSBridgeSrv::SrvRequest> FromJson(TSharedPtr<FJsonObject> JsonObject) const override
@@ -19,7 +19,7 @@ public:
 	TSharedPtr<FROSBridgeSrv::SrvResponse> Callback(TSharedPtr<FROSBridgeSrv::SrvRequest> InRequest) override
 	{
 		TSharedPtr<std_srvs::Trigger::Request> Request = StaticCastSharedPtr<std_srvs::Trigger::Request>(InRequest);
-		OnRosCallsLoad.ExecuteIfBound();
+		OnRosCallback.ExecuteIfBound();
 		return MakeShareable<FROSBridgeSrv::SrvResponse>(new std_srvs::Trigger::Response(true, FString("Load State!")));
 	}
 };

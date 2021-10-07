@@ -7,7 +7,7 @@
 #include "USaveState.generated.h"
 
 /**
- * Custom Struct holding Informations and the Bytes to recreate an Actors using
+ * Custom Struct holding Information and the Bytes to recreate an Actors using
  * the Serialize Method provided by Unreal Engine 4.
  */
 USTRUCT()
@@ -57,8 +57,9 @@ class USTATESAVEPLUGIN_API USaveState : public UObject
 public:
 	TMap<FString, FSavedObjectInfo*> SavedState = TMap<FString, FSavedObjectInfo*>();
 
-	USaveState();
-	bool Save(UWorld* World, const TArray<TSubclassOf<AActor>>& ToSave);
+	USaveState(){};
+	
+	bool Save(UWorld* World, const TArray<TSubclassOf<AActor>>& ClassesToSave);
 	bool Load(UWorld* World);
 
 	/**
@@ -67,7 +68,7 @@ public:
 	 * @param OutSavedItemAmount An reference to an uint8 on which we're to track how many items we've saved.
 	 * @return The serialized data of this SaveState.
 	 */
-	TArray<uint8> SerializeState(int& OutSavedItemAmount) const;
+	TArray<uint8> SerializeState(int32& OutSavedItemAmount) const;
 
 	/**
 	 * Function intended to reapply previously serialized data back to be used.
@@ -77,10 +78,10 @@ public:
 	 */
 	void ApplySerializeOnState(const TArray<uint8> SerializedState, const int& InSavedItemAmount);
 
-	TArray<UClass*> GetSavedClasses();
+	TArray<UClass*> GetSavedClasses() const;
 
 private:
-	TArray<UClass*> SavedClasses;
+	TArray<UClass*> SavedClasses = {};
 
 	/**
 	 * Auxiliary Function. Clears the SaveStates Internal Variables.
