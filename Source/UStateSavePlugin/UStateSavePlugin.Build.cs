@@ -27,6 +27,7 @@ public class UStateSavePlugin : ModuleRules
 			{
 				"Core",
 				"UROSBridge",
+                "UROSControl",
 				"Json", 
 				"JsonUtilities",
 				"UTags",

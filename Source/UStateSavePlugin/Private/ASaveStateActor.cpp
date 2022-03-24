@@ -1,5 +1,6 @@
 #include "ASaveStateActor.h"
 
+#include "FileHelper.h"
 #include "Engine/StaticMeshActor.h"
 #include "FileManagerGeneric.h"
 #include "ROSBridgeGameInstance.h"
@@ -13,11 +14,27 @@ ASaveStateActor::ASaveStateActor()
 
 	// Standard Actor to add and serialize
 	ClassesToSave.Add(AStaticMeshActor::StaticClass());
+
+	SavedState = NewObject<USaveState>();
 }
 
 void ASaveStateActor::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	if (bHasLoadedLastTick)
+	{
+		for (AActor* RefreshingActor : ActorsToRefreshOnTick)
+		{
+			if (UPrimitiveComponent* RefRootC = Cast<UPrimitiveComponent>(RefreshingActor->GetRootComponent()))
+			{
+				RefRootC->SetSimulatePhysics(RefRootC->IsSimulatingPhysics());
+			}
+		}
+
+		bHasLoadedLastTick = false;
+		ActorsToRefreshOnTick.Empty();
+	}
 
 #if WITH_EDITOR
 	// Debug Section
@@ -27,14 +44,14 @@ void ASaveStateActor::Tick(float DeltaTime)
 	if (bSave)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Debug: Saving Test"));
-		RosCallSave();
+		RosCallSave(SaveSlotName);
 		bSave = false;
 	}
 
 	if (bLoad)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Debug: Loading Test"));
-		RosCallLoad();
+		RosCallLoad(SaveSlotName);
 		bLoad = false;
 	}
 #endif
@@ -48,8 +65,8 @@ void ASaveStateActor::BeginPlay()
 	const UROSBridgeGameInstance* ActiveGameInstance = Cast<UROSBridgeGameInstance>(GetGameInstance());
 	
 	// Add new Services to the ROSHandler
-	SaveService = MakeShareable<FROSSaveStateLevel>(new FROSSaveStateLevel(SaveServiceTopic, TEXT("std_srvs/Trigger")));
-	LoadService = MakeShareable<FROSLoadStateLevel>(new FROSLoadStateLevel(LoadServiceTopic, TEXT("std_srvs/Trigger")));
+	SaveService = MakeShareable<FROSSaveStateLevel>(new FROSSaveStateLevel(SaveServiceTopic, TEXT("world_control_msgs/DeleteModel")));
+	LoadService = MakeShareable<FROSLoadStateLevel>(new FROSLoadStateLevel(LoadServiceTopic, TEXT("world_control_msgs/DeleteModel")));
 
 	ActiveGameInstance->ROSHandler->AddServiceServer(SaveService);
 	ActiveGameInstance->ROSHandler->AddServiceServer(LoadService);
@@ -60,26 +77,20 @@ void ASaveStateActor::BeginPlay()
 	LoadService->OnRosCallback.BindUObject(this, &ASaveStateActor::RosCallLoad);
 }
 
-/**
- * Function responsible saving the State of the current running instance, into a format to be saved.
- *
- * @param FileName FString Input saying which file to save.
- * @param FilePath Optional. FString Indicating the path to the Folder holding the Savesfiles.
- */
-void ASaveStateActor::SaveState(FString FileName, FString FilePath)
+void ASaveStateActor::SaveStateCurrentWorld(const FString FileName, const FString FilePath)
 {
-	TArray<uint8> DataToSave = TArray<uint8>();
 	int32 AmountOfItemsSaved = 0;
 
 	SavedState = NewObject<USaveState>();
-	SavedState->Save(GetWorld(), ClassesToSave);
-	DataToSave = SavedState->SerializeState(AmountOfItemsSaved);
+	SavedState->SaveFromWorld(GetWorld(), ClassesToSave);
+	TArray<uint8> ByteArray = SavedState->SerializeState(AmountOfItemsSaved);
 
 	FBufferArchive SaveData(true);
 	FName WorldName = GetWorld()->GetFName();
 	SaveData << WorldName;
 	SaveData << AmountOfItemsSaved;
-	SaveData << DataToSave;
+	SaveData << ByteArray;
+	
 	const FString FileToSaveOn = FilePath + GetWorld()->GetName() + "_" + FileName + ".sav";
 	FFileHelper::SaveArrayToFile(SaveData, *FileToSaveOn);
 
@@ -87,20 +98,12 @@ void ASaveStateActor::SaveState(FString FileName, FString FilePath)
 	SaveData.Empty();
 }
 
-/**
- * Function responsible loading stated File back into a usable state within the Unreal Engine.
- *
- * @param FileName FString Input saying which file to load.
- * @param FilePath Optional. FString Indicating the path to the Folder holding the Savesfiles.
- */
-void ASaveStateActor::LoadState(FString FileName, FString FilePath)
+void ASaveStateActor::LoadStateOntoCurrentLevel(const FString FileName, const FString FilePath)
 {
-	UE_LOG(LogTemp, Warning, TEXT("%s: Begin loading State!"), TEXT(__FUNCTION__));
 	SavedState = NewObject<USaveState>();
 
 	const FString FileToLoadPath = FilePath + GetWorld()->GetName() + "_" + FileName + ".sav";
 	TArray<uint8> SavedData;
-	UE_LOG(LogTemp, Warning, TEXT("%s: Attempt to load..."), TEXT(__FUNCTION__));
 	FFileHelper::LoadFileToArray(SavedData, *FileToLoadPath);
 
 	FName WorldName = FName();
@@ -114,9 +117,9 @@ void ASaveStateActor::LoadState(FString FileName, FString FilePath)
 
 	if (GetWorld()->GetFName() == WorldName)
 	{
-		// TODO: Add Security. More.
 		SavedState->ApplySerializeOnState(SaveData, ItemsSaved);
-		SavedState->Load(GetWorld());
+		ActorsToRefreshOnTick = SavedState->LoadOntoWorld(GetWorld());
+		bHasLoadedLastTick = true;
 		UE_LOG(LogTemp, Warning, TEXT("%s: Save loaded."), TEXT(__FUNCTION__));
 		return;
 	}
@@ -131,19 +134,19 @@ TArray<FString> ASaveStateActor::ListAllSaveFilesAtLocation() const
 	return OutputArray;
 }
 
-/**
- * Delegate Function to be executed if ROS calls for the Level to be saved.
- */
-void ASaveStateActor::RosCallSave()
+void ASaveStateActor::RosCallSave(FString InFileName)
 {
-	SaveState(SaveSlotName, SaveFilePath);
+	FFunctionGraphTask::CreateAndDispatchWhenReady([this, InFileName]()
+	{
+		SaveStateCurrentWorld(InFileName, SaveFilePath);
+	}, TStatId(), nullptr, ENamedThreads::GameThread);
 }
 
-/**
- * Delegate Function to be executed if ROS calls for the level to be saved.
- */
-void ASaveStateActor::RosCallLoad()
+void ASaveStateActor::RosCallLoad(FString InFileName)
 {
-	LoadState(SaveSlotName, SaveFilePath);
+	FFunctionGraphTask::CreateAndDispatchWhenReady([this, InFileName]()
+	{
+		LoadStateOntoCurrentLevel(InFileName, SaveFilePath);
+	}, TStatId(), nullptr, ENamedThreads::GameThread);
 }
 

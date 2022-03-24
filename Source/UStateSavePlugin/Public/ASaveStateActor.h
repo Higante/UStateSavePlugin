@@ -35,10 +35,21 @@ public:
 
 	virtual void Tick(float DeltaTime) override;
 
+	/**
+	 *	Delegate Function which is called if RosCalls the Save Function.
+	 *
+	 *	@param InFileName A String holding the named FileName.
+	 */
 	UFUNCTION()
-	void RosCallSave();
+	void RosCallSave(FString InFileName);
+	
+	/**
+	 *	Delegate Function which is called if RosCalls the Load Function
+	 *
+	 *	@param InFileName A String holding the named FileName
+	 */
 	UFUNCTION()
-	void RosCallLoad();
+	void RosCallLoad(FString InFileName);
 
 	UFUNCTION()
 	TArray<FString> ListAllSaveFilesAtLocation() const;
@@ -51,10 +62,31 @@ private:
 	FString SaveSlotName = "Foobar";
 	const FString SaveFilePath = FPaths::ProjectSavedDir() + "UStateSavePlugin/";
 	
+	UPROPERTY()
 	USaveState* SavedState;
+
+	/** Used as a workaround for physics */
+	bool bHasLoadedLastTick = false;
+
+	/** Array of Actors which will be refreshed for a Workaround. */
+	UPROPERTY()
+	TArray<AActor*> ActorsToRefreshOnTick = TArray<AActor*>();
 	
+	/**
+	 * Saves the current State of the World into a File.
+	 *
+	 * @param FileName Name of the File on which to save on
+	 * @param FilePath Path to the File
+	 */
 	UFUNCTION()
-	void SaveState(FString FileName,FString FilePath);
+	void SaveStateCurrentWorld(FString FileName, FString FilePath);
+	
+	/**
+	 * Function responsible loading stated File back into a usable state within the Unreal Engine.
+	 *
+	 * @param FileName Name of the File on which to load from
+	 * @param FilePath Path ot the File
+	 */
 	UFUNCTION()
-	void LoadState(FString FileName,FString FilePath);
+	void LoadStateOntoCurrentLevel(FString FileName, FString FilePath);
 };
